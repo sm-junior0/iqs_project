@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Simple Real-Time Chat Test</title>
+  <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+  <style>
+   
+  </style>
+</head>
+<body>
+  <div class="chat-container">
+    <div class="chat-header">Real-Time Chat</div>
+    <div class="user-bar">
+      <input id="userId" placeholder="Your User ID" />
+      <input id="token" class="token-input" placeholder="JWT Token" />
+      <button onclick="register()">Register</button>
+    </div>
+    <div class="info-bar" id="infoBar"></div>
+    <div class="messages" id="messages"></div>
+    <form class="send-bar" onsubmit="sendMsg(event)">
+      <input id="toId" placeholder="To User ID" />
+      <input id="groupId" placeholder="Group (evaluator, school, trainer, all)" />
+      <input id="msg" placeholder="Type a message..." autocomplete="off" />
+      <button type="submit">Send</button>
+    </form>
+  </div>
+  <script>
+    const API_BASE = 'http://localhost:5000';
+    const socket = io(API_BASE);
+    let myId = null;
+    let registered = false;
+    let token = '';
+
+    function register() {
+      myId = document.getElementById('userId').value.trim();
+      token = document.getElementById('token').value.trim();
+      if (!myId || !token) {
+        setInfo('Please enter your user ID and JWT token.');
+        return;
+      }
+      socket.emit('register', myId);
+      registered = true;
+      setInfo('Registered as user: ' + myId);
+      fetchRecentMessages();
+    }
+
+    async function fetchRecentMessages() {
+      // Fetch inbox
+      const inbox = await fetch(API_BASE + '/api/message/inbox', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      }).then(r => r.json()).catch(() => ({}));
+      // Fetch sent
+      const sent = await fetch(API_BASE + '/api/message/sent', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      }).then(r => r.json()).catch(() => ({}));
+      // Clear messages
+      document.getElementById('messages').innerHTML = '';
+      // Show inbox
+      if (inbox && inbox.inbox) {
+        inbox.inbox.reverse().forEach(msg => {
+          addMsg('From ' + msg.sender_id + ': ' + msg.message, 'other');
+        });
+      }
+      // Show sent
+      if (sent && sent.sent) {
+        sent.sent.reverse().forEach(msg => {
+          addMsg('You to ' + msg.receiver_id + ': ' + msg.message, 'me');
+        });
+      }
+    }
+
+    async function sendMsg(e) {
+      e.preventDefault();
+      if (!registered) {
+        setInfo('Please register first.');
+        return;
+      }
+      const to = document.getElementById('toId').value.trim();
+      const group = document.getElementById('groupId').value.trim();
+      const message = document.getElementById('msg').value.trim();
+      if (!message) return;
+      // Real-time emit
+      if (group) {
+        socket.emit('admin-message', { group, message });
+        // Save to DB
+        await fetch(API_BASE + '/api/admin/message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({ group, message })
+        });
+        addMsg('You to group ' + group + ': ' + message, 'me');
+      } else if (to) {
+        socket.emit('admin-message', { to, message });
+        // Save to DB
+        await fetch(API_BASE + '/api/admin/message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({ receiver_id: to, message })
+        });
+        addMsg('You to ' + to + ': ' + message, 'me');
+      } else {
+        setInfo('Enter a user ID or group to send a message.');
+        return;
+      }
+      document.getElementById('msg').value = '';
+    }
+
+    socket.on('receive-message', (data) => {
+      const sender = data.from || 'admin';
+      const group = data.group;
+      let label = group ? `[Group: ${group}]` : sender === myId ? 'You' : sender;
+      addMsg(label + ': ' + data.message, sender === myId ? 'me' : 'other');
+    });
+
+    function addMsg(text, who) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + (who || 'other');
+      div.textContent = text;
+      document.getElementById('messages').appendChild(div);
+      document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+    }
+
+    function setInfo(msg) {
+      document.getElementById('infoBar').textContent = msg;
+    }
+  </script>
+</body>
+</html>

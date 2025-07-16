@@ -1,0 +1,1549 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "IQS Accreditation & Training API",
+    "version": "1.0.0",
+    "description": "API for school accreditation, evaluator management, training, messaging, and file handling.",
+    "contact": {
+      "email": "support@iqs-accreditation.com"
+    },
+    "license": {
+      "name": "MIT",
+      "url": "https://opensource.org/licenses/MIT"
+    }
+  },
+  "servers": [
+    { 
+      "url": "http://localhost:5000",
+      "description": "Development server" 
+    }
+  ],
+  "tags": [
+    {
+      "name": "Authentication",
+      "description": "Login and password management"
+    },
+    {
+      "name": "Admin",
+      "description": "Administrator operations for managing the system"
+    },
+    {
+      "name": "Evaluator",
+      "description": "Operations for school evaluators"
+    },
+    {
+      "name": "School",
+      "description": "Operations for schools applying for accreditation"
+    },
+    {
+      "name": "Trainer",
+      "description": "Training session management"
+    },
+    {
+      "name": "Messaging",
+      "description": "System messaging between users"
+    },
+    {
+      "name": "Files",
+      "description": "File upload and download operations"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "School": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "address": { "type": "string" },
+          "contact_email": { "type": "string", "format": "email" }
+        },
+        "required": ["name", "address", "contact_email"]
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "role": { "type": "string", "enum": ["admin", "evaluator", "school", "trainer"] }
+        },
+        "required": ["name", "email", "role"]
+      },
+      "Application": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "school": { "$ref": "#/components/schemas/School" },
+          "type": { "type": "string", "enum": ["initial", "renewal"] },
+          "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+          "submitted_at": { "type": "string", "format": "date-time" }
+        },
+        "required": ["school", "type", "status", "submitted_at"]
+      },
+      "Task": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "evaluator": { "$ref": "#/components/schemas/User" },
+          "school": { "$ref": "#/components/schemas/School" },
+          "description": { "type": "string" },
+          "status": { "type": "string", "enum": ["pending", "completed", "cancelled"] },
+          "assigned_at": { "type": "string", "format": "date-time" }
+        },
+        "required": ["evaluator", "school", "description", "status", "assigned_at"]
+      }
+    }
+  },
+  "security": [ { "bearerAuth": [] } ],
+  "paths": {
+    "/api/auth/login": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Login and get JWT",
+        "description": "Authenticates user credentials and returns a JWT token for authorization",
+        "operationId": "loginUser",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { 
+                    "type": "string",
+                    "format": "email",
+                    "example": "user@example.com"
+                  },
+                  "password": { 
+                    "type": "string",
+                    "format": "password",
+                    "example": "password123"
+                  }
+                },
+                "required": ["email", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "JWT Token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": { 
+                      "type": "string",
+                      "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials"
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/auth/reset": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Send password reset email",
+        "description": "Initiates password reset process by sending email with reset token",
+        "operationId": "sendResetEmail",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { 
+                    "type": "string",
+                    "format": "email",
+                    "example": "user@example.com"
+                  }
+                },
+                "required": ["email"]
+              }
+            }
+          }
+        },
+        "responses": { 
+          "200": { 
+            "description": "Reset email sent" 
+          },
+          "404": {
+            "description": "Email not found"
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/auth/reset/confirm": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Confirm password reset",
+        "description": "Completes password reset process using token from email",
+        "operationId": "confirmPasswordReset",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { 
+                    "type": "string",
+                    "format": "email",
+                    "example": "user@example.com"
+                  },
+                  "token": { 
+                    "type": "string",
+                    "example": "reset-token-123"
+                  },
+                  "newPassword": { 
+                    "type": "string",
+                    "format": "password",
+                    "example": "newPassword123"
+                  }
+                },
+                "required": ["email", "token", "newPassword"]
+              }
+            }
+          }
+        },
+        "responses": { 
+          "200": { 
+            "description": "Password updated" 
+          },
+          "400": {
+            "description": "Invalid token or expired"
+          }
+        },
+        "security": []
+      }
+    },
+    
+    
+    "/api/admin/dashboard": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Admin dashboard",
+        "description": "Get summary statistics and overview data for admin dashboard",
+        "operationId": "getAdminDashboard",
+        "responses": { 
+          "200": { 
+            "description": "Dashboard data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schoolsCount": { "type": "integer" },
+                    "evaluatorsCount": { "type": "integer" },
+                    "pendingApplications": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - admin access required"
+          }
+        }
+      }
+    },
+    "/api/admin/message": {
+      "post": {
+        "tags": ["Admin", "Messaging"],
+        "summary": "Send message (admin)",
+        "description": "Send system messages to users (admin only)",
+        "operationId": "sendAdminMessage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "receiver_id": { 
+                    "type": "integer",
+                    "example": 123 
+                  },
+                  "message": { 
+                    "type": "string",
+                    "example": "Your accreditation application has been received" 
+                  }
+                },
+                "required": ["receiver_id", "message"]
+              }
+            }
+          }
+        },
+        "responses": { 
+          "200": { 
+            "description": "Message sent" 
+          },
+          "403": {
+            "description": "Forbidden - admin access required"
+          }
+        }
+      }
+    },
+    "/api/admin/assign-evaluator": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Assign evaluator to a school",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "school_id": { "type": "integer" },
+                  "evaluator_id": { "type": "integer" }
+                },
+                "required": ["school_id", "evaluator_id"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Evaluator assigned" }, "400": { "description": "Missing school_id or evaluator_id" } }
+      }
+    },
+    "/api/admin/change-status": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Change status for a school or application",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "type": { "type": "string", "enum": ["school", "application"] },
+                  "id": { "type": "integer" },
+                  "status": { "type": "string" }
+                },
+                "required": ["type", "id", "status"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Status updated" },
+          "400": { "description": "Missing type, id, or status or invalid type" }
+        }
+      }
+    },
+    "/api/admin/settings": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Update system settings",
+        "description": "Modify system configuration settings (admin only)",
+        "operationId": "updateSystemSettings",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "key": { 
+                    "type": "string",
+                    "example": "accreditation_fee" 
+                  },
+                  "value": { 
+                    "type": "string",
+                    "example": "500" 
+                  }
+                },
+                "required": ["key", "value"]
+              }
+            }
+          }
+        },
+        "responses": { 
+          "200": { 
+            "description": "Settings updated" 
+          },
+          "400": {
+            "description": "Invalid setting"
+          }
+        }
+      }
+    },
+    "/api/admin/create-user": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Create user account",
+        "description": "Create new user accounts (admin only)",
+        "operationId": "createUserAccount",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { 
+                    "type": "string",
+                    "example": "John Doe" 
+                  },
+                  "email": { 
+                    "type": "string",
+                    "format": "email",
+                    "example": "john@example.com" 
+                  },
+                  "password": { 
+                    "type": "string",
+                    "format": "password",
+                    "example": "securePassword123" 
+                  },
+                  "role": { 
+                    "type": "string",
+                    "enum": ["admin", "evaluator", "school", "trainer"],
+                    "example": "evaluator" 
+                  }
+                },
+                "required": ["name", "email", "password", "role"]
+              }
+            }
+          }
+        },
+        "responses": { 
+          "201": { 
+            "description": "User created" 
+          },
+          "400": {
+            "description": "Invalid user data"
+          }
+        }
+      }
+    },
+    
+    
+    "/api/evaluator/upload-report": {
+      "post": {
+        "tags": ["Evaluator", "Files"],
+        "summary": "Upload evaluation report",
+        "description": "Evaluator uploads a report for an assigned school. Requires school_id, visit_date, and a file.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "school_id": { "type": "integer", "example": 1, "description": "ID of the school being evaluated" },
+                  "visit_date": { "type": "string", "format": "date", "example": "2024-06-01", "description": "Date of the evaluation visit" },
+                  "file": { "type": "string", "format": "binary", "description": "The report file to upload" }
+                },
+                "required": ["school_id", "visit_date", "file"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Report uploaded" },
+          "400": { "description": "Missing school_id, visit_date, or file" },
+          "403": { "description": "You are not assigned to this school" }
+        }
+      }
+    },
+    
+    
+     
+    "/api/school/apply": {
+      "post": {
+        "tags": ["School"],
+        "summary": "Apply for accreditation (renewal or other)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "type": { "type": "string", "example": "renewal" }
+                },
+                "required": ["type"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Application submitted" },
+          "400": { "description": "Missing type" }
+        }
+      }
+    },
+    
+    
+    "/api/school/upload-docs": {
+      "post": {
+        "tags": ["School", "Files"],
+        "summary": "Upload multiple required files",
+        "description": "Upload one or more documents required for accreditation. Each file will be saved for the school.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "school_id": { "type": "integer", "example": 123, "description": "The ID of the school uploading the documents." },
+                  "docs": {
+                    "type": "array",
+                    "items": { "type": "string", "format": "binary" },
+                    "description": "One or more files to upload. Use the field name 'docs' for each file in the form-data."
+                  }
+                },
+                "required": ["school_id", "docs"]
+              },
+              "examples": {
+                "single file": {
+                  "summary": "Single file upload",
+                  "value": { "school_id": 1, "docs": ["file.pdf"] }
+                },
+                "multiple files": {
+                  "summary": "Multiple files upload",
+                  "value": { "school_id": 1, "docs": ["file1.pdf", "file2.pdf"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Documents uploaded" },
+          "400": { "description": "Missing school_id or files" }
+        }
+      }
+    },
+    
+    
+    "/api/trainer/manage-session": {
+      "post": {
+        "tags": ["Trainer"],
+        "summary": "Create/update training session",
+        "description": "Manage training sessions for accreditation preparation",
+        "operationId": "manageTrainingSession",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { 
+                    "type": "string",
+                    "example": "Accreditation Standards Training" 
+                  },
+                  "session_date": { 
+                    "type": "string",
+                    "format": "date",
+                    "example": "2023-11-20" 
+                  },
+                  "report_path": { 
+                    "type": "string",
+                    "example": "/reports/training123.pdf" 
+                  }
+                },
+                "required": ["title", "session_date", "report_path"]
+              }
+            }
+          }
+        },
+        "responses": { 
+          "200": { 
+            "description": "Session managed" 
+          },
+          "403": {
+            "description": "Forbidden - trainer access required"
+          }
+        }
+      }
+    },
+    "/api/trainer/track-attendance": {
+      "post": {
+        "tags": ["Trainer"],
+        "summary": "Track attendees",
+        "description": "Record attendance for a training session",
+        "operationId": "trackTrainingAttendance",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": { 
+                    "type": "integer",
+                    "example": 456 
+                  },
+                  "attendees": { 
+                    "type": "array", 
+                    "items": { 
+                      "type": "integer" 
+                    },
+                    "example": [101, 102, 103]
+                  }
+                },
+                "required": ["session_id", "attendees"]
+              }
+            }
+          }
+        },
+        "responses": { 
+          "200": { 
+            "description": "Attendance tracked" 
+          },
+          "400": {
+            "description": "Invalid session ID"
+          }
+        }
+      }
+    },
+    "/api/trainer/sessions": {
+      "get": {
+        "tags": ["Trainer"],
+        "summary": "List all sessions for the trainer",
+        "responses": { "200": { "description": "List of sessions" } }
+      }
+    },
+    "/api/trainer/sessions/{id}": {
+      "get": {
+        "tags": ["Trainer"],
+        "summary": "Get a session by ID",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "Session details" }, "404": { "description": "Session not found" } }
+      },
+      "put": {
+        "tags": ["Trainer"],
+        "summary": "Update a session by ID",
+        "description": "Update a training session. Requires title, session_date, and a file (report).",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string", "example": "Updated Training" },
+                  "session_date": { "type": "string", "format": "date", "example": "2024-06-10" },
+                  "file": { "type": "string", "format": "binary", "description": "The report file to upload" }
+                },
+                "required": ["title", "session_date", "file"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Session updated" },
+          "400": { "description": "Missing title, session_date, or file" },
+          "404": { "description": "Session not found or not authorized" }
+        }
+      },
+      "delete": {
+        "tags": ["Trainer"],
+        "summary": "Delete a session by ID",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "Session deleted" }, "404": { "description": "Session not found" } }
+      }
+    },
+    "/api/evaluator/my-schools": {
+      "get": {
+        "tags": ["Evaluator"],
+        "summary": "Get schools assigned to evaluator",
+        "responses": { "200": { "description": "List of schools" } }
+      }
+    },
+    "/api/evaluator/visit-history": {
+      "get": {
+        "tags": ["Evaluator"],
+        "summary": "Get visit history",
+        "responses": { "200": { "description": "Visit history" } }
+      }
+    },
+    "/api/evaluator/reports/{school_id}": {
+      "get": {
+        "tags": ["Evaluator"],
+        "summary": "Get reports for a school",
+        "parameters": [{ "name": "school_id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "List of reports" } }
+      }
+    },
+    "/api/evaluator/schools/{schoolId}/feedback": {
+      "post": {
+        "tags": ["Evaluator"],
+        "summary": "Submit feedback to a school",
+        "parameters": [{ "name": "schoolId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": { "required": true, "content": { "multipart/form-data": { "schema": { "type": "object", "properties": { "rating": { "type": "integer" }, "type": { "type": "string" }, "description": { "type": "string" }, "supportingDocument": { "type": "string", "format": "binary" } }, "required": ["rating", "type", "description"] } } } },
+        "responses": { "201": { "description": "Feedback submitted" }, "400": { "description": "Missing fields" } }
+      }
+    },
+    "/api/evaluator/report/{id}": {
+      "delete": {
+        "tags": ["Evaluator"],
+        "summary": "Delete a report by ID (if evaluator owns it)",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "Report deleted" }, "404": { "description": "Not found or not authorized" } }
+      }
+    },
+    "/api/evaluator/report/download/{id}": {
+      "get": {
+        "tags": ["Evaluator", "Files"],
+        "summary": "Download a report by ID (if evaluator owns it)",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "File download" }, "404": { "description": "Not found or not authorized" } }
+      }
+    },
+    "/api/school/track": {
+      "get": {
+        "tags": ["School"],
+        "summary": "Track accreditation application",
+        "responses": { "200": { "description": "Application status" } }
+      }
+    },
+  
+    "/api/school/download-certificate": {
+      "get": {
+        "tags": ["School", "Files"],
+        "summary": "Download accreditation certificate",
+        "responses": { "200": { "description": "Certificate download" } }
+      }
+    },
+    "/api/school/feedback/{app_id}": {
+      "get": {
+        "tags": ["School"],
+        "summary": "Get feedback for an application",
+        "parameters": [{ "name": "app_id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "Feedback details" } }
+      }
+    },
+    "/api/message/send": {
+      "post": {
+        "tags": ["Messaging"],
+        "summary": "Send message",
+        "description": "Send message to another user",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "receiver_id": { "type": "integer", "example": 789 },
+                  "message": { "type": "string", "example": "Hello, when is our next meeting?" }
+                },
+                "required": ["receiver_id", "message"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Message sent" }, "400": { "description": "Invalid receiver ID" } }
+      }
+    },
+    "/api/message/inbox": {
+      "get": {
+        "tags": ["Messaging"],
+        "summary": "Get inbox messages",
+        "responses": { "200": { "description": "Inbox messages" } }
+      }
+    },
+    "/api/message/sent": {
+      "get": {
+        "tags": ["Messaging"],
+        "summary": "Get sent messages",
+        "responses": { "200": { "description": "Sent messages" } }
+      }
+    },
+    "/api/trainer/upload-report": {
+      "post": {
+        "tags": ["Trainer", "Files"],
+        "summary": "Upload training report",
+        "description": "Upload summary report for a training session",
+        "operationId": "uploadTrainingReport",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "session_id": { 
+                    "type": "integer",
+                    "example": 456 
+                  },
+                  "report_path": { 
+                    "type": "string",
+                    "example": "/reports/training456.pdf" 
+                  }
+                },
+                "required": ["session_id", "report_path"]
+              }
+            }
+          }
+        },
+        "responses": { 
+          "200": { 
+            "description": "Training report uploaded" 
+          },
+          "400": {
+            "description": "Invalid session ID"
+          }
+        }
+      }
+    },
+    "/api/evaluator/visit-history": {
+      "get": {
+        "tags": ["Evaluator"],
+        "summary": "Get visit history",
+        "responses": { "200": { "description": "Visit history" } }
+      }
+    },
+    "/api/evaluator/reports/{school_id}": {
+      "get": {
+        "tags": ["Evaluator"],
+        "summary": "Get reports for a school",
+        "parameters": [{ "name": "school_id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "List of reports" } }
+      }
+    },
+    "/api/evaluator/schools/{schoolId}/feedback": {
+      "post": {
+        "tags": ["Evaluator"],
+        "summary": "Submit feedback to a school",
+        "parameters": [{ "name": "schoolId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": { "required": true, "content": { "multipart/form-data": { "schema": { "type": "object", "properties": { "rating": { "type": "integer" }, "type": { "type": "string" }, "description": { "type": "string" }, "supportingDocument": { "type": "string", "format": "binary" } }, "required": ["rating", "type", "description"] } } } },
+        "responses": { "201": { "description": "Feedback submitted" }, "400": { "description": "Missing fields" } }
+      }
+    },
+    "/api/evaluator/report/{id}": {
+      "delete": {
+        "tags": ["Evaluator"],
+        "summary": "Delete a report by ID (if evaluator owns it)",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "Report deleted" }, "404": { "description": "Not found or not authorized" } }
+      }
+    },
+    "/api/evaluator/report/download/{id}": {
+      "get": {
+        "tags": ["Evaluator", "Files"],
+        "summary": "Download a report by ID (if evaluator owns it)",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "File download" }, "404": { "description": "Not found or not authorized" } }
+      }
+    },
+    
+    "/api/school/track": {
+      "get": {
+        "tags": ["School"],
+        "summary": "Track accreditation application",
+        "responses": { "200": { "description": "Application status" } }
+      }
+    },
+ 
+    "/api/school/download-certificate": {
+      "get": {
+        "tags": ["School", "Files"],
+        "summary": "Download accreditation certificate",
+        "responses": { "200": { "description": "Certificate download" } }
+      }
+    },
+    "/api/school/feedback/{app_id}": {
+      "get": {
+        "tags": ["School"],
+        "summary": "Get feedback for an application",
+        "parameters": [{ "name": "app_id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "Feedback details" } }
+      }
+    },
+    "/api/message/send": {
+      "post": {
+        "tags": ["Messaging"],
+        "summary": "Send message",
+        "description": "Send message to another user",
+        "operationId": "sendMessage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "receiver_id": { 
+                    "type": "integer",
+                    "example": 789 
+                  },
+                  "message": { 
+                    "type": "string",
+                    "example": "Hello, when is our next meeting?" 
+                  }
+                },
+                "required": ["receiver_id", "message"]
+              }
+            }
+          }
+        },
+        "responses": { 
+          "200": { 
+            "description": "Message sent" 
+          },
+          "400": {
+            "description": "Invalid receiver ID"
+          }
+        }
+      }
+    },
+    "/api/evaluator/my-tasks": {
+      "get": {
+        "tags": ["Evaluator"],
+        "summary": "Get all tasks assigned to the evaluator",
+        "responses": {
+          "200": { "description": "List of tasks" },
+          "403": { "description": "Forbidden - evaluator access required" }
+        }
+      }
+    },
+    "/api/evaluator/upload": {
+      "post": {
+        "tags": ["Evaluator", "Files"],
+        "summary": "Evaluator uploads a document for a school",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "school_id": { "type": "integer" },
+                  "doc_type": { "type": "string" }
+                },
+                "required": ["file", "school_id", "doc_type"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "File uploaded" },
+          "400": { "description": "Invalid input" }
+        }
+      }
+    },
+    "/api/evaluator/download": {
+      "get": {
+        "tags": ["Evaluator", "Files"],
+        "summary": "List all uploaded documents for the evaluator",
+        "responses": {
+          "200": { "description": "List of documents" },
+          "403": { "description": "Forbidden - evaluator access required" }
+        }
+      }
+    },
+    "/api/evaluator/download/{doc_id}": {
+      "get": {
+        "tags": ["Evaluator", "Files"],
+        "summary": "Download a specific document by ID",
+        "parameters": [
+          { "name": "doc_id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "File download" },
+          "404": { "description": "Not found" }
+        }
+      }
+    },
+    "/api/school/first-time-apply": {
+      "post": {
+        "tags": ["School"],
+        "summary": "First-time application with multiple files and required fields",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string", "example": "School Name" },
+                  "country": { "type": "string", "example": "Rwanda" },
+                  "accreditation_type": { "type": "string", "example": "new" },
+                  "registration_doc": { "type": "string", "format": "binary" },
+                  "curriculum_doc": { "type": "string", "format": "binary" }
+                },
+                "required": ["name", "country", "accreditation_type", "registration_doc", "curriculum_doc"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Application submitted" },
+          "400": { "description": "Missing required fields or files" }
+        }
+      }
+    },
+    "/api/trainer/manage-session": {
+      "post": {
+        "tags": ["Trainer"],
+        "summary": "Create or update a training session",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "title": { "type": "string" },
+                  "session_date": { "type": "string", "format": "date" }
+                },
+                "required": ["file", "title", "session_date"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Session managed" },
+          "400": { "description": "Invalid input" }
+        }
+      }
+    },
+    "/api/trainer/track-attendance": {
+      "post": {
+        "tags": ["Trainer"],
+        "summary": "Track attendance for a session",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "session_id": { "type": "integer" }
+                },
+                "required": ["file", "session_id"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Attendance tracked" },
+          "400": { "description": "Invalid input" }
+        }
+      }
+    },
+    "/api/trainer/upload-report": {
+      "post": {
+        "tags": ["Trainer", "Files"],
+        "summary": "Upload a training report",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "session_id": { "type": "integer" }
+                },
+                "required": ["file", "session_id"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Training report uploaded" },
+          "400": { "description": "Invalid input" }
+        }
+      }
+    },
+    "/api/auth/signup/evaluator": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Register a new evaluator",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string", "format": "password" }
+                },
+                "required": ["name", "email", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Evaluator registered" },
+          "400": { "description": "Invalid input" }
+        }
+      }
+    },
+    "/api/auth/signup/school": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Register a new school",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string", "format": "password" }
+                },
+                "required": ["name", "email", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "School registered" },
+          "400": { "description": "Invalid input" }
+        }
+      }
+    },
+    "/api/auth/signup/trainer": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Register a new trainer",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string", "format": "password" }
+                },
+                "required": ["name", "email", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Trainer registered" },
+          "400": { "description": "Invalid input" }
+        }
+      }
+    },
+    "/api/file/upload": {
+      "post": {
+        "tags": ["Files"],
+        "summary": "Upload a file (any authenticated user)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" }
+                },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "File uploaded" },
+          "400": { "description": "Invalid input" }
+        }
+      }
+    },
+    "/api/file/download/{id}": {
+      "get": {
+        "tags": ["Files"],
+        "summary": "Download a file by ID (any authenticated user)",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "File download" },
+          "404": { "description": "Not found" }
+        }
+      }
+    },
+    "/api/admin/countries": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List all countries",
+        "description": "Get a list of all countries.",
+        "responses": {
+          "200": {
+            "description": "List of countries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "countries": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/schools": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List all schools",
+        "description": "Get a list of all schools.",
+        "responses": {
+          "200": {
+            "description": "List of schools",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "schools": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/School" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/evaluators": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List all evaluators",
+        "description": "Get a list of all evaluators.",
+        "responses": {
+          "200": {
+            "description": "List of evaluators",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "evaluators": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/User" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/users": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List all users",
+        "description": "Get a list of all users.",
+        "responses": {
+          "200": {
+            "description": "List of users",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "users": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/User" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Create user",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "name": { "type": "string" }, "email": { "type": "string" }, "password": { "type": "string" }, "role": { "type": "string" } }, "required": ["name", "email", "password", "role"] } } } },
+        "responses": { "201": { "description": "User created" } }
+      }
+    },
+    "/api/admin/users/{id}": {
+      "put": {
+        "tags": ["Admin"],
+        "summary": "Update user",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "name": { "type": "string" }, "email": { "type": "string" }, "role": { "type": "string" } }, "required": ["name", "email", "role"] } } } },
+        "responses": { "200": { "description": "User updated" }, "404": { "description": "User not found" } }
+      },
+      "delete": {
+        "tags": ["Admin"],
+        "summary": "Delete user",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "User deleted" }, "404": { "description": "User not found" } }
+      }
+    },
+    "/api/admin/reports": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List all reports (evaluations)",
+        "responses": { "200": { "description": "List of reports" } }
+      }
+    },
+    "/api/admin/reports/{id}": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "View a single report by ID",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "Report details" }, "404": { "description": "Report not found" } }
+      },
+      "delete": {
+        "tags": ["Admin"],
+        "summary": "Delete a report by ID",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "Report deleted" }, "404": { "description": "Report not found" } }
+      }
+    },
+    "/api/admin/reports/{id}/download": {
+      "get": {
+        "tags": ["Admin", "Files"],
+        "summary": "Download a report file by ID",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "File download" }, "404": { "description": "File not found" } }
+      }
+    },
+    "/api/admin/settings": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get all settings",
+        "responses": { "200": { "description": "Settings list" } }
+      },
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Update a setting",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "key": { "type": "string" }, "value": { "type": "string" } }, "required": ["key", "value"] } } } },
+        "responses": { "200": { "description": "Settings updated" } }
+      },
+      "put": {
+        "tags": ["Admin"],
+        "summary": "Update a setting",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "key": { "type": "string" }, "value": { "type": "string" } }, "required": ["key", "value"] } } } },
+        "responses": { "200": { "description": "Settings updated" } }
+      }
+    },
+    "/api/evaluator/dashboard": {
+      "get": {
+        "tags": ["Evaluator", "Dashboard"],
+        "summary": "Evaluator dashboard",
+        "responses": { "200": { "description": "Evaluator dashboard data" } }
+      }
+    },
+    "/api/school/dashboard": {
+      "get": {
+        "tags": ["School", "Dashboard"],
+        "summary": "School dashboard",
+        "responses": { "200": { "description": "School dashboard data" } }
+      }
+    },
+    "/api/trainer/dashboard": {
+      "get": {
+        "tags": ["Trainer", "Dashboard"],
+        "summary": "Trainer dashboard",
+        "responses": { "200": { "description": "Trainer dashboard data" } }
+      }
+    },
+    "/api/files/upload": {
+      "post": {
+        "tags": ["Files"],
+        "summary": "Upload a file (any authenticated user)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" }
+                },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "File uploaded" } }
+      }
+    },
+    "/api/files/download/{id}": {
+      "get": {
+        "tags": ["Files"],
+        "summary": "Download a file by ID (any authenticated user)",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "File download" }, "404": { "description": "Not found" } }
+      }
+    },
+    "/api/admin/add-school": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Add a new school",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "address": { "type": "string" },
+                  "contact_email": { "type": "string", "format": "email" }
+                },
+                "required": ["name", "address", "contact_email"]
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "School created" }, "400": { "description": "Missing fields" } }
+      }
+    },
+    "/api/admin/add-evaluator": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Add a new evaluator",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string", "format": "password" }
+                },
+                "required": ["name", "email", "password"]
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Evaluator created" }, "400": { "description": "Missing fields" } }
+      }
+    },
+    "/api/admin/add-trainer": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Add a new trainer",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string", "format": "password" }
+                },
+                "required": ["name", "email", "password"]
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Trainer created" }, "400": { "description": "Missing fields" } }
+      }
+    },
+    "/api/admin/assign-task": {
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Assign task to evaluator",
+        "description": "Assign a task to an evaluator for a school.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "evaluator_id": { "type": "integer" },
+                  "school_id": { "type": "integer" },
+                  "description": { "type": "string" }
+                },
+                "required": ["evaluator_id", "school_id", "description"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Task assigned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "task": { "$ref": "#/components/schemas/Task" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/new-applications": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List new (pending) applications",
+        "description": "Get all new (pending) applications.",
+        "responses": {
+          "200": {
+            "description": "List of applications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "applications": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Application" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
