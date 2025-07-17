@@ -43,7 +43,7 @@ const RegisterEvaluator: React.FC = () => {
     setIsSubmitting(true);
     try {
       await register({ name: formData.name, email: formData.email, password: formData.password }, 'evaluator');
-      navigate('/dashboard/evaluator');
+      navigate('/auth/login');
     } catch (error: any) {
       setErrors({ email: error.message || 'Registration failed' });
     } finally {

@@ -43,7 +43,7 @@ const RegisterSchool: React.FC = () => {
     setIsSubmitting(true);
     try {
       await register({ name: formData.name, email: formData.email, password: formData.password }, 'school');
-      navigate('/dashboard/school');
+      navigate('/auth/login');
     } catch (error: any) {
       setErrors({ email: error.message || 'Registration failed' });
     } finally {

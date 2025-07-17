@@ -2,6 +2,8 @@
 
 import type React from "react";
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
 import DashboardNavbar from "../../components/DashboardNavbar";
 import {
   LayoutDashboard,
@@ -259,6 +261,7 @@ const AdminDashboard: React.FC = () => {
     };
     fetchData();
   }, []);
+
 
   useEffect(() => {
     const socket = io(import.meta.env.VITE_API_URL);
@@ -718,8 +721,11 @@ const AdminDashboard: React.FC = () => {
   );
 
   const renderDashboard = () => (
+    
     <div className="space-y-4 sm:space-y-6">
+      
       <div className="flex items-center justify-between">
+      
         <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
           Dashboard
         </h1>
@@ -2749,10 +2755,18 @@ const AdminDashboard: React.FC = () => {
     setAssignmentSuccess(null);
     setShowAssignmentModal(true);
   };
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSignOut = () => {
+    logout();
+    navigate("/auth/login");
+  };
 
   return (
     <>
-      <DashboardNavbar />
+    
+    
       <div className="min-h-screen bg-gray-100 flex">
         {/* Mobile Sidebar Overlay */}
         {sidebarOpen && (
@@ -2801,9 +2815,21 @@ const AdminDashboard: React.FC = () => {
             })}
           </nav>
         </div>
+        
 
         {/* Main Content */}
         <div className="flex-1 overflow-auto">
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 bg-white">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+          Admin Dashboard
+          </h1>
+          <button
+            onClick={handleSignOut}
+            className="px-4 py-2 rounded bg-red-500 text-white font-semibold hover:bg-red-600 transition"
+          >
+            Sign Out
+          </button>
+        </div>
           <div className="p-4 sm:p-6">{renderContent()}</div>
         </div>
 

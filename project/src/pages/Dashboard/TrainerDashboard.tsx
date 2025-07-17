@@ -926,9 +926,15 @@ const TrainerDashboard: React.FC = () => {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium text-gray-600">
-              Total Participants
+              Total Report Attendance
             </p>
-            <p className="text-2xl font-bold text-gray-900">5</p>
+            <p className="text-2xl font-bold text-gray-900">
+              {attendanceStats
+                ? attendanceStats.totalAttendance
+                : attendanceLoading
+                ? "..."
+                : 0}
+            </p>
             <div className="flex items-center mt-2">
               <TrendingUp size={16} className="text-green-500 mr-1" />
               <span className="text-sm text-green-500">15%</span>
@@ -1206,7 +1212,7 @@ const TrainerDashboard: React.FC = () => {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium text-gray-600">Total Reports</p>
-            <p className="text-2xl font-bold text-gray-900">5</p>
+            <p className="text-2xl font-bold text-gray-900">{attendanceLoading ? '...' : attendanceRecords.length}</p>
             <div className="flex items-center mt-2">
               <TrendingUp size={16} className="text-green-500 mr-1" />
               <span className="text-sm text-green-500">15%</span>
@@ -1618,8 +1624,8 @@ const TrainerDashboard: React.FC = () => {
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
   const [profileFormData, setProfileFormData] = useState({
-    name: '',
-    email: ''
+    name: "",
+    email: "",
   });
 
   useEffect(() => {
@@ -1627,19 +1633,22 @@ const TrainerDashboard: React.FC = () => {
       setProfileLoading(true);
       setProfileError(null);
       try {
-        const token = localStorage.getItem('token');
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/trainer/profile`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error('Failed to fetch profile');
+        const token = localStorage.getItem("token");
+        const res = await fetch(
+          `${import.meta.env.VITE_API_URL}/api/trainer/profile`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        if (!res.ok) throw new Error("Failed to fetch profile");
         const data = await res.json();
         setProfile(data.profile);
         setProfileFormData({
-          name: data.profile.name || '',
-          email: data.profile.email || ''
+          name: data.profile.name || "",
+          email: data.profile.email || "",
         });
       } catch (err: any) {
-        setProfileError(err.message || 'Error loading profile');
+        setProfileError(err.message || "Error loading profile");
       } finally {
         setProfileLoading(false);
       }
@@ -1653,22 +1662,25 @@ const TrainerDashboard: React.FC = () => {
     setProfileError(null);
     setProfileSuccess(null);
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/trainer/profile`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(profileFormData),
-      });
-      if (!res.ok) throw new Error('Failed to update profile');
-      setProfileSuccess('Profile updated successfully');
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/trainer/profile`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(profileFormData),
+        }
+      );
+      if (!res.ok) throw new Error("Failed to update profile");
+      setProfileSuccess("Profile updated successfully");
       // Optionally refetch profile
       const data = await res.json();
       setProfile((prev: any) => ({ ...prev, ...profileFormData }));
     } catch (err: any) {
-      setProfileError(err.message || 'Error updating profile');
+      setProfileError(err.message || "Error updating profile");
     } finally {
       setProfileLoading(false);
     }
@@ -1678,7 +1690,9 @@ const TrainerDashboard: React.FC = () => {
     <div className="space-y-8">
       <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
       <div className="bg-white rounded-lg shadow-sm border p-8">
-        <h2 className="text-xl font-semibold text-gray-900 mb-8">Personal Settings</h2>
+        <h2 className="text-xl font-semibold text-gray-900 mb-8">
+          Personal Settings
+        </h2>
         {profileLoading ? (
           <div className="text-center text-gray-500">Loading profile...</div>
         ) : profileError ? (
@@ -1686,21 +1700,29 @@ const TrainerDashboard: React.FC = () => {
         ) : (
           <form onSubmit={handleProfileUpdate} className="space-y-8">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Full Names</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Full Names
+              </label>
               <input
                 type="text"
                 value={profileFormData.name}
-                onChange={e => setProfileFormData(f => ({ ...f, name: e.target.value }))}
+                onChange={(e) =>
+                  setProfileFormData((f) => ({ ...f, name: e.target.value }))
+                }
                 className="w-full px-0 py-2 border-0 border-b border-gray-300 focus:ring-0 focus:border-[#1B365D] bg-transparent"
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Email
+              </label>
               <input
                 type="email"
                 value={profileFormData.email}
-                onChange={e => setProfileFormData(f => ({ ...f, email: e.target.value }))}
+                onChange={(e) =>
+                  setProfileFormData((f) => ({ ...f, email: e.target.value }))
+                }
                 className="w-full px-0 py-2 border-0 border-b border-gray-300 focus:ring-0 focus:border-[#1B365D] bg-transparent"
                 required
               />
@@ -1711,11 +1733,15 @@ const TrainerDashboard: React.FC = () => {
                 disabled={profileLoading}
                 className="flex-1 bg-[#1B365D] text-white px-4 py-2 rounded-lg hover:bg-[#2563EB] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {profileLoading ? 'Saving...' : 'Save Changes'}
+                {profileLoading ? "Saving..." : "Save Changes"}
               </button>
             </div>
-            {profileSuccess && <div className="text-green-600 text-center">{profileSuccess}</div>}
-            {profileError && <div className="text-red-500 text-center">{profileError}</div>}
+            {profileSuccess && (
+              <div className="text-green-600 text-center">{profileSuccess}</div>
+            )}
+            {profileError && (
+              <div className="text-red-500 text-center">{profileError}</div>
+            )}
           </form>
         )}
       </div>
