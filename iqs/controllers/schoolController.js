@@ -140,6 +140,23 @@ exports.getApplicationById = async (req, res) => {
   }
 };
 
+// Delete a specific application by ID (must belong to the school)
+exports.deleteApplicationById = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rowCount } = await pool.query(
+      'DELETE FROM applications WHERE id = $1 AND school_id = $2',
+      [id, req.user.id]
+    );
+    if (rowCount === 0) {
+      return res.status(404).json({ message: 'Application not found or not authorized' });
+    }
+    res.json({ message: 'Application deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to delete application', error: err.message });
+  }
+};
+
 // Get all certificates for the logged-in school
 exports.getAllCertificates = async (req, res) => {
   try {

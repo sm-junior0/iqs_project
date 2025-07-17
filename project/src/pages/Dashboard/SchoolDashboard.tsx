@@ -84,39 +84,40 @@ const SchoolDashboard: React.FC = () => {
   const curriculumInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch applications (now using /applications endpoint)
+  const fetchApplications = async () => {
+    setApplicationsLoading(true);
+    setApplicationsError(null);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/school/applications`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!res.ok) throw new Error("Failed to fetch applications");
+      const data = await res.json();
+      setApplications(
+        (data.applications || []).map((app: any) => ({
+          id: app.id,
+          applicationId: app.id,
+          applicationDate: app.submitted_at,
+          applicationStatus:
+            app.status === "approved"
+              ? "Approved"
+              : app.status === "pending"
+              ? "Pending"
+              : "Rejected",
+        }))
+      );
+    } catch (err: any) {
+      setApplicationsError(err.message || "Error fetching applications");
+    } finally {
+      setApplicationsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchApplications = async () => {
-      setApplicationsLoading(true);
-      setApplicationsError(null);
-      try {
-        const token = localStorage.getItem("token");
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/school/applications`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-        if (!res.ok) throw new Error("Failed to fetch applications");
-        const data = await res.json();
-        setApplications(
-          (data.applications || []).map((app: any) => ({
-            id: app.id,
-            applicationId: app.id,
-            applicationDate: app.submitted_at,
-            applicationStatus:
-              app.status === "approved"
-                ? "Approved"
-                : app.status === "pending"
-                ? "Pending"
-                : "Rejected",
-          }))
-        );
-      } catch (err: any) {
-        setApplicationsError(err.message || "Error fetching applications");
-      } finally {
-        setApplicationsLoading(false);
-      }
-    };
     fetchApplications();
   }, []);
 
@@ -203,6 +204,35 @@ const SchoolDashboard: React.FC = () => {
       setAccreditationError(err.message);
     } finally {
       setAccreditationLoading(false);
+    }
+  };
+
+  // Add state for delete confirmation modal
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [applicationToDelete, setApplicationToDelete] = useState<string | null>(
+    null
+  );
+
+  // Handler to delete an application
+  const handleDeleteApplication = async () => {
+    if (!applicationToDelete) return;
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${
+          import.meta.env.VITE_API_URL
+        }/api/school/application/${applicationToDelete}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!res.ok) throw new Error("Failed to delete application");
+      await fetchApplications();
+      setShowDeleteModal(false);
+      setApplicationToDelete(null);
+    } catch (err: any) {
+      alert(err.message || "Error deleting application");
     }
   };
 
@@ -337,27 +367,7 @@ const SchoolDashboard: React.FC = () => {
       setShowApplicationModal(false);
       setApplicationStep(1);
       // Refresh applications list
-      const fetchApplications = async () => {
-        setApplicationsLoading(true);
-        setApplicationsError(null);
-        try {
-          const token = localStorage.getItem("token");
-          const res = await fetch(
-            `${import.meta.env.VITE_API_URL}/api/school/track`,
-            {
-              headers: { Authorization: `Bearer ${token}` },
-            }
-          );
-          if (!res.ok) throw new Error("Failed to fetch applications");
-          const data = await res.json();
-          setApplications(data.applications || []);
-        } catch (err: any) {
-          setApplicationsError(err.message || "Error fetching applications");
-        } finally {
-          setApplicationsLoading(false);
-        }
-      };
-      fetchApplications();
+      await fetchApplications();
     } catch (err: any) {
       setSubmitError(err.message || "Error submitting application");
     } finally {
@@ -524,7 +534,13 @@ const SchoolDashboard: React.FC = () => {
                           View
                         </button>
                         {application.applicationStatus === "Pending" && (
-                          <button className="bg-red-600 text-white px-3 py-2 rounded text-sm hover:bg-red-700 transition-colors">
+                          <button
+                            onClick={() => {
+                              setApplicationToDelete(application.id);
+                              setShowDeleteModal(true);
+                            }}
+                            className="bg-red-600 text-white px-3 py-2 rounded text-sm hover:bg-red-700 transition-colors"
+                          >
                             Delete
                           </button>
                         )}
@@ -586,7 +602,13 @@ const SchoolDashboard: React.FC = () => {
                       View
                     </button>
                     {application.applicationStatus === "Pending" && (
-                      <button className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-colors">
+                      <button
+                        onClick={() => {
+                          setApplicationToDelete(application.id);
+                          setShowDeleteModal(true);
+                        }}
+                        className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-colors"
+                      >
                         Delete
                       </button>
                     )}
@@ -1464,6 +1486,34 @@ const SchoolDashboard: React.FC = () => {
                     Download Information
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                Confirm Delete
+              </h3>
+              <p className="mb-6">
+                Are you sure you want to delete this application?
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setShowDeleteModal(false)}
+                  className="px-4 py-2 rounded bg-gray-300 text-gray-700 hover:bg-gray-400"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteApplication}
+                  className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+                >
+                  Delete
+                </button>
               </div>
             </div>
           </div>

@@ -27,6 +27,8 @@ router.post('/first-time-apply', upload.fields([
 router.get('/applications', require('../controllers/schoolController').getAllApplications);
 // View a specific application by ID (must belong to the school)
 router.get('/application/:id', require('../controllers/schoolController').getApplicationById);
+// Delete a specific application by ID (must belong to the school)
+router.delete('/application/:id', require('../controllers/schoolController').deleteApplicationById);
 // View all certificates for the school
 router.get('/certificates', require('../controllers/schoolController').getAllCertificates);
 // View all feedback for the school

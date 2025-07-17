@@ -238,7 +238,7 @@ exports.getAttendanceStats = async (req, res) => {
 exports.getProfile = async (req, res) => {
   try {
     const trainer_id = req.user.id;
-    const { rows } = await pool.query('SELECT id, name, email, role, phone, location, created_at FROM users WHERE id = $1', [trainer_id]);
+    const { rows } = await pool.query('SELECT id, name, email, role, created_at FROM users WHERE id = $1', [trainer_id]);
     if (rows.length === 0) {
       return res.status(404).json({ message: 'User not found' });
     }
@@ -253,13 +253,13 @@ exports.getProfile = async (req, res) => {
 exports.updateProfile = async (req, res) => {
   try {
     const trainer_id = req.user.id;
-    const { name, email, phone, location } = req.body;
+    const { name, email } = req.body;
     if (!name || !email) {
       return res.status(400).json({ message: 'Name and email are required' });
     }
     await pool.query(
-      'UPDATE users SET name = $1, email = $2, phone = $3, location = $4 WHERE id = $5',
-      [name, email, phone || '', location || '', trainer_id]
+      'UPDATE users SET name = $1, email = $2 WHERE id = $3',
+      [name, email, trainer_id]
     );
     res.json({ message: 'Profile updated successfully' });
   } catch (error) {

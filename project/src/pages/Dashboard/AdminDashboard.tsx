@@ -171,6 +171,35 @@ const AdminDashboard: React.FC = () => {
     email: "",
   });
 
+  // 1. Add applications state and fetch applications in useEffect
+  const [applications, setApplications] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchApplications = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(
+          `${import.meta.env.VITE_API_URL}/api/admin/applications`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        if (!res.ok) throw new Error("Failed to fetch applications");
+        const data = await res.json();
+        setApplications(data.applications || []);
+      } catch (err) {
+        setApplications([]);
+      }
+    };
+    fetchApplications();
+  }, []);
+
+  // 2. Helper to check if a school has a pending application
+  const hasPendingApplication = (schoolId: string) =>
+    applications.some(
+      (app) => app.school_id === schoolId && app.status === "pending"
+    );
+
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -260,8 +289,7 @@ const AdminDashboard: React.FC = () => {
       }
     };
     fetchData();
-  }, []);
-
+  }, [hasPendingApplication]);
 
   useEffect(() => {
     const socket = io(import.meta.env.VITE_API_URL);
@@ -721,11 +749,8 @@ const AdminDashboard: React.FC = () => {
   );
 
   const renderDashboard = () => (
-    
     <div className="space-y-4 sm:space-y-6">
-      
       <div className="flex items-center justify-between">
-      
         <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
           Dashboard
         </h1>
@@ -2737,14 +2762,32 @@ const AdminDashboard: React.FC = () => {
       setSelectedSchoolForAssignment(null);
       setSelectedEvaluatorForAssignment("");
 
-      // Refresh schools data to show updated assignments
+      // Refresh schools and evaluators data to show updated assignments
       await refreshSchools();
+      await refreshEvaluators();
       toast.success("Evaluator assigned successfully!");
     } catch (err: any) {
       setAssignmentError(err.message || "Error assigning evaluator");
       toast.error("Failed to assign evaluator");
     } finally {
       setAssignmentLoading(false);
+    }
+  };
+
+  const refreshEvaluators = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const evaluatorsRes = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/admin/evaluators`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!evaluatorsRes.ok) throw new Error("Failed to refresh evaluators");
+      const evaluatorsData = await evaluatorsRes.json();
+      setEvaluators(evaluatorsData.evaluators);
+    } catch (err: any) {
+      setEvaluators([]);
     }
   };
 
@@ -2765,8 +2808,6 @@ const AdminDashboard: React.FC = () => {
 
   return (
     <>
-    
-    
       <div className="min-h-screen bg-gray-100 flex">
         {/* Mobile Sidebar Overlay */}
         {sidebarOpen && (
@@ -2815,21 +2856,20 @@ const AdminDashboard: React.FC = () => {
             })}
           </nav>
         </div>
-        
 
         {/* Main Content */}
         <div className="flex-1 overflow-auto">
-        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 bg-white">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
-          Admin Dashboard
-          </h1>
-          <button
-            onClick={handleSignOut}
-            className="px-4 py-2 rounded bg-red-500 text-white font-semibold hover:bg-red-600 transition"
-          >
-            Sign Out
-          </button>
-        </div>
+          <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 bg-white">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+              Admin Dashboard
+            </h1>
+            <button
+              onClick={handleSignOut}
+              className="px-4 py-2 rounded bg-red-500 text-white font-semibold hover:bg-red-600 transition"
+            >
+              Sign Out
+            </button>
+          </div>
           <div className="p-4 sm:p-6">{renderContent()}</div>
         </div>
 
