@@ -23,7 +23,7 @@ exports.getSchools = async (req, res) => {
 
 // Get all evaluators
 exports.getEvaluators = async (req, res) => {
-  const { rows } = await pool.query("SELECT id, name, email FROM users WHERE role = 'evaluator'");
+  const { rows } = await pool.query("SELECT id, name, email,created_at FROM users WHERE role = 'evaluator'");
   res.json({ evaluators: rows });
 };
 
@@ -196,7 +196,7 @@ exports.changeStatus = async (req, res) => {
     if (result.rowCount === 0) {
       return res.status(404).json({ message: 'School not found' });
     }
-    // If status is approved, generate certificate
+    // If status is approved, generate certificate and update all applications to approved
     if (status.toLowerCase() === 'approved') {
       // Get school name
       const schoolRows = await schoolModel.getById(id);
@@ -208,8 +208,10 @@ exports.changeStatus = async (req, res) => {
       try {
         const certPath = await generateCertificate(schoolName, approvedDate);
         await schoolModel.updateCertificatePath(id, certPath);
+        // Update all applications for this school to approved
+        await require('../models/applicationModel').updateAllStatusForSchool(id, 'approved');
       } catch (err) {
-        return res.status(500).json({ message: 'Failed to generate certificate', error: err.message });
+        return res.status(500).json({ message: 'Failed to generate certificate or update applications', error: err.message });
       }
     }
     res.json({ message: 'School status updated' });
@@ -290,4 +292,60 @@ exports.getNewApplications = async (req, res) => {
     ORDER BY a.submitted_at DESC
   `);
   res.json({ applications: rows });
+};
+
+// Get admin profile
+exports.getProfile = async (req, res) => {
+  try {
+    const admin_id = req.user.id;
+    const { rows } = await pool.query('SELECT id, name, email, role, created_at FROM users WHERE id = $1', [admin_id]);
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    res.json({ profile: rows[0] });
+  } catch (error) {
+    console.error('Error getting profile:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// Update admin profile
+exports.updateProfile = async (req, res) => {
+  try {
+    const admin_id = req.user.id;
+    const { name, email } = req.body;
+    
+    if (!name || !email) {
+      return res.status(400).json({ message: 'Name and email are required' });
+    }
+    
+    // Check if email is already taken by another user
+    const { rows: existingUsers } = await pool.query(
+      'SELECT id FROM users WHERE email = $1 AND id != $2',
+      [email, admin_id]
+    );
+    
+    if (existingUsers.length > 0) {
+      return res.status(409).json({ message: 'Email already in use' });
+    }
+    
+    const { rows } = await pool.query(
+      'UPDATE users SET name = $1, email = $2 WHERE id = $3 RETURNING id, name, email, role, created_at',
+      [name, email, admin_id]
+    );
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    res.json({ 
+      message: 'Profile updated successfully',
+      profile: rows[0] 
+    });
+  } catch (error) {
+    console.error('Error updating profile:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
 };

@@ -99,6 +99,40 @@
           "assigned_at": { "type": "string", "format": "date-time" }
         },
         "required": ["evaluator", "school", "description", "status", "assigned_at"]
+      },
+      "TrainingReport": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "trainer_id": { "type": "integer" },
+          "title": { "type": "string" },
+          "session_date": { "type": "string", "format": "date" },
+          "report_path": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "trainer_id", "title", "session_date", "report_path", "created_at"]
+      },
+      "AttendanceReport": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "session_id": { "type": "integer" },
+          "report_path": { "type": "string" }
+        },
+        "required": ["id", "session_id", "report_path"]
+      },
+      "TrainingSession": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "trainer_id": { "type": "integer" },
+          "title": { "type": "string" },
+          "location": { "type": "string" },
+          "joining_date": { "type": "string", "format": "date" },
+          "duration": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "trainer_id", "title", "location", "joining_date", "duration", "created_at"]
       }
     }
   },
@@ -540,9 +574,7 @@
     "/api/trainer/manage-session": {
       "post": {
         "tags": ["Trainer"],
-        "summary": "Create/update training session",
-        "description": "Manage training sessions for accreditation preparation",
-        "operationId": "manageTrainingSession",
+        "summary": "Create a new training session",
         "requestBody": {
           "required": true,
           "content": {
@@ -550,33 +582,34 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "title": { 
-                    "type": "string",
-                    "example": "Accreditation Standards Training" 
-                  },
-                  "session_date": { 
-                    "type": "string",
-                    "format": "date",
-                    "example": "2023-11-20" 
-                  },
-                  "report_path": { 
-                    "type": "string",
-                    "example": "/reports/training123.pdf" 
-                  }
+                  "title": { "type": "string" },
+                  "location": { "type": "string" },
+                  "joining_date": { "type": "string", "format": "date" },
+                  "duration": { "type": "string" }
                 },
-                "required": ["title", "session_date", "report_path"]
+                "required": ["title", "location", "joining_date", "duration"]
               }
             }
           }
         },
-        "responses": { 
-          "200": { 
-            "description": "Session managed" 
+        "responses": {
+          "201": {
+            "description": "Session created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session": { "$ref": "#/components/schemas/TrainingSession" }
+                  }
+                }
+              }
+            }
           },
-          "403": {
-            "description": "Forbidden - trainer access required"
-          }
-        }
+          "400": { "description": "Missing required fields" },
+          "401": { "description": "Unauthorized" }
+        },
+        "security": [ { "bearerAuth": [] } ]
       }
     },
     "/api/trainer/track-attendance": {
@@ -636,37 +669,56 @@
       "put": {
         "tags": ["Trainer"],
         "summary": "Update a session by ID",
-        "description": "Update a training session. Requires title, session_date, and a file (report).",
         "parameters": [
           { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
         ],
         "requestBody": {
           "required": true,
           "content": {
-            "multipart/form-data": {
+            "application/json": {
               "schema": {
                 "type": "object",
                 "properties": {
-                  "title": { "type": "string", "example": "Updated Training" },
-                  "session_date": { "type": "string", "format": "date", "example": "2024-06-10" },
-                  "file": { "type": "string", "format": "binary", "description": "The report file to upload" }
+                  "title": { "type": "string" },
+                  "location": { "type": "string" },
+                  "joining_date": { "type": "string", "format": "date" },
+                  "duration": { "type": "string" }
                 },
-                "required": ["title", "session_date", "file"]
+                "required": ["title", "location", "joining_date", "duration"]
               }
             }
           }
         },
         "responses": {
-          "200": { "description": "Session updated" },
-          "400": { "description": "Missing title, session_date, or file" },
+          "200": {
+            "description": "Session updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session": { "$ref": "#/components/schemas/TrainingSession" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Missing required fields" },
           "404": { "description": "Session not found or not authorized" }
-        }
+        },
+        "security": [ { "bearerAuth": [] } ]
       },
       "delete": {
         "tags": ["Trainer"],
         "summary": "Delete a session by ID",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": { "200": { "description": "Session deleted" }, "404": { "description": "Session not found" } }
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "Session deleted" },
+          "404": { "description": "Session not found" }
+        },
+        "security": [ { "bearerAuth": [] } ]
       }
     },
     "/api/evaluator/my-schools": {
@@ -1001,32 +1053,7 @@
         }
       }
     },
-    "/api/trainer/manage-session": {
-      "post": {
-        "tags": ["Trainer"],
-        "summary": "Create or update a training session",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "file": { "type": "string", "format": "binary" },
-                  "title": { "type": "string" },
-                  "session_date": { "type": "string", "format": "date" }
-                },
-                "required": ["file", "title", "session_date"]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": { "description": "Session managed" },
-          "400": { "description": "Invalid input" }
-        }
-      }
-    },
+   
     "/api/trainer/track-attendance": {
       "post": {
         "tags": ["Trainer"],
@@ -1543,6 +1570,241 @@
             }
           }
         }
+      }
+    },
+    "/api/trainer/reports": {
+      "get": {
+        "tags": ["Trainer"],
+        "summary": "List all uploaded reports for the trainer",
+        "description": "Returns all training sessions with a report uploaded by the logged-in trainer.",
+        "responses": {
+          "200": {
+            "description": "List of reports",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "reports": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TrainingReport"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        },
+        "security": [ { "bearerAuth": [] } ]
+      }
+    },
+    "/api/trainer/reports/{id}": {
+      "get": {
+        "tags": ["Trainer"],
+        "summary": "Get a single report by ID (if owned by trainer)",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Report details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "report": { "$ref": "#/components/schemas/TrainingReport" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Report not found" },
+          "401": { "description": "Unauthorized" }
+        },
+        "security": [ { "bearerAuth": [] } ]
+      },
+      "delete": {
+        "tags": ["Trainer"],
+        "summary": "Delete a report by ID (if owned by trainer)",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "Report deleted" },
+          "404": { "description": "Report not found or not authorized" },
+          "401": { "description": "Unauthorized" }
+        },
+        "security": [ { "bearerAuth": [] } ]
+      }
+    },
+    "/api/trainer/reports/{id}/download": {
+      "get": {
+        "tags": ["Trainer", "Files"],
+        "summary": "Download a report file by ID (if owned by trainer)",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "File download" },
+          "404": { "description": "Report not found or not authorized" },
+          "401": { "description": "Unauthorized" }
+        },
+        "security": [ { "bearerAuth": [] } ]
+      }
+    },
+    "/api/trainer/attendance/{id}": {
+      "get": {
+        "tags": ["Trainer"],
+        "summary": "View an attendance report by id (if owned by trainer)",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Attendance report details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "attendance": { "$ref": "#/components/schemas/AttendanceReport" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Attendance report not found or not authorized" },
+          "401": { "description": "Unauthorized" }
+        },
+        "security": [ { "bearerAuth": [] } ]
+      },
+      "put": {
+        "tags": ["Trainer"],
+        "summary": "Update an attendance report by id (file upload, if owned by trainer)",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" }
+                },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Attendance report updated" },
+          "400": { "description": "No file uploaded" },
+          "404": { "description": "Attendance report not found or not authorized" },
+          "401": { "description": "Unauthorized" }
+        },
+        "security": [ { "bearerAuth": [] } ]
+      },
+      "delete": {
+        "tags": ["Trainer"],
+        "summary": "Delete an attendance report by id (if owned by trainer)",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "Attendance report deleted" },
+          "404": { "description": "Attendance report not found or not authorized" },
+          "401": { "description": "Unauthorized" }
+        },
+        "security": [ { "bearerAuth": [] } ]
+      }
+    },
+    "/api/school/applications": {
+      "get": {
+        "tags": ["School"],
+        "summary": "Get all applications for the logged-in school",
+        "description": "Returns a list of all applications for the authenticated school user.",
+        "responses": {
+          "200": {
+            "description": "List of applications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "applications": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Application" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        },
+        "security": [{ "bearerAuth": [] }]
+      }
+    },
+    "/api/school/application/{id}": {
+      "get": {
+        "tags": ["School"],
+        "summary": "Get a specific application by ID for the logged-in school",
+        "description": "Returns a single application if it belongs to the authenticated school user.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Application ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Application object",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Application" }
+              }
+            }
+          },
+          "404": { "description": "Application not found" },
+          "401": { "description": "Unauthorized" }
+        },
+        "security": [{ "bearerAuth": [] }]
+      }
+    },
+    "/api/school/certificates": {
+      "get": {
+        "tags": ["School"],
+        "summary": "Get all certificates for the logged-in school",
+        "description": "Returns a list of certificate paths for the authenticated school user.",
+        "responses": {
+          "200": {
+            "description": "List of certificate paths",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "certificates": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        },
+        "security": [{ "bearerAuth": [] }]
       }
     }
   }

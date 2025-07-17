@@ -11,3 +11,9 @@ exports.getBySchool = (school_id) =>
 
 exports.updateStatus = (application_id, status) =>
   pool.query('UPDATE applications SET status = $1 WHERE id = $2', [status, application_id]);
+
+// Update all applications for a school to a given status
+exports.updateAllStatusForSchool = async (schoolId, status) => {
+  const pool = require('../config/db');
+  return pool.query('UPDATE applications SET status = $1 WHERE school_id = $2', [status, schoolId]);
+};

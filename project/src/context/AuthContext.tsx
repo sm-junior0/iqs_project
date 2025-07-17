@@ -1,11 +1,17 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
 
 export interface User {
   id: string;
   email: string;
   fullName: string;
   phoneNumber: string;
-  accountType: 'admin' | 'evaluator' | 'institution' | 'trainer';
+  accountType: "admin" | "evaluator" | "institution" | "trainer";
 }
 
 interface AuthContextType {
@@ -15,11 +21,15 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (
     data: { name: string; email: string; password: string },
-    role: 'admin' | 'evaluator' | 'school' | 'trainer'
+    role: "admin" | "evaluator" | "school" | "trainer"
   ) => Promise<void>;
   logout: () => void;
   forgotPassword: (email: string) => Promise<void>;
-  resetPassword: (token: string, newPassword: string) => Promise<void>;
+  resetPassword: (
+    email: string,
+    token: string,
+    newPassword: string
+  ) => Promise<void>;
   verifyCode: (code: string) => Promise<void>;
 }
 
@@ -30,7 +40,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 };
@@ -45,8 +55,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   useEffect(() => {
     // Check for existing session on app load
-    const storedUser = localStorage.getItem('user');
-    if (storedUser && storedUser !== 'undefined') {
+    const storedUser = localStorage.getItem("user");
+    if (storedUser && storedUser !== "undefined") {
       setUser(JSON.parse(storedUser));
     }
     setIsLoading(false);
@@ -55,21 +65,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const login = async (email: string, password: string): Promise<void> => {
     setIsLoading(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      });
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/auth/login`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        }
+      );
       if (!response.ok) {
-        throw new Error('Invalid email or password');
+        throw new Error("Invalid email or password");
       }
       const data = await response.json();
       // Expecting: { token, user }
       setUser(data.user);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      localStorage.setItem('token', data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+      localStorage.setItem("token", data.token);
     } catch (error: any) {
-      throw new Error(error.message || 'Login failed');
+      throw new Error(error.message || "Login failed");
     } finally {
       setIsLoading(false);
     }
@@ -77,24 +90,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const register = async (
     data: { name: string; email: string; password: string },
-    role: 'admin' | 'evaluator' | 'school' | 'trainer'
+    role: "admin" | "evaluator" | "school" | "trainer"
   ): Promise<void> => {
     setIsLoading(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/auth/signup/${role}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/auth/signup/${role}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        }
+      );
       if (!response.ok) {
         const err = await response.json();
-        throw new Error(err.message || 'Registration failed');
+        throw new Error(err.message || "Registration failed");
       }
       const user = await response.json();
       setUser(user);
-      localStorage.setItem('user', JSON.stringify(user));
+      localStorage.setItem("user", JSON.stringify(user));
     } catch (error: any) {
-      throw new Error(error.message || 'Registration failed');
+      throw new Error(error.message || "Registration failed");
     } finally {
       setIsLoading(false);
     }
@@ -102,44 +118,62 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const logout = (): void => {
     setUser(null);
-    localStorage.removeItem('user');
-    localStorage.removeItem('token');
+    localStorage.removeItem("user");
+    localStorage.removeItem("token");
   };
 
   const forgotPassword = async (email: string): Promise<void> => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/auth/reset`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/auth/reset`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        }
+      );
       if (!response.ok) {
-        throw new Error('Failed to send password reset email');
+        const errorData = await response.json();
+        throw new Error(
+          errorData.message || "Failed to send password reset email"
+        );
       }
+      const data = await response.json();
+      console.log("Reset email sent:", data.message);
     } catch (error: any) {
-      throw new Error(error.message || 'Failed to send password reset email');
+      throw new Error(error.message || "Failed to send password reset email");
     }
   };
 
-  const resetPassword = async (token: string, newPassword: string): Promise<void> => {
+  const resetPassword = async (
+    email: string,
+    token: string,
+    newPassword: string
+  ): Promise<void> => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/auth/reset/confirm`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, newPassword })
-      });
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/auth/reset/confirm`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, token, newPassword }),
+        }
+      );
       if (!response.ok) {
-        throw new Error('Failed to reset password');
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to reset password");
       }
+      const data = await response.json();
+      console.log("Password reset successful:", data.message);
     } catch (error: any) {
-      throw new Error(error.message || 'Failed to reset password');
+      throw new Error(error.message || "Failed to reset password");
     }
   };
 
   const verifyCode = async (code: string): Promise<void> => {
     // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    console.log('Code verified:', code);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    console.log("Code verified:", code);
   };
 
   const value: AuthContextType = {
@@ -151,12 +185,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     logout,
     forgotPassword,
     resetPassword,
-    verifyCode
+    verifyCode,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

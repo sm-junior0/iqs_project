@@ -1,8 +1,8 @@
-"use client"
+"use client";
 
-import type React from "react"
-import { useState, useEffect } from "react"
-import DashboardNavbar from '../../components/DashboardNavbar';
+import type React from "react";
+import { useState, useEffect } from "react";
+import DashboardNavbar from "../../components/DashboardNavbar";
 import {
   LayoutDashboard,
   SchoolIcon,
@@ -20,69 +20,96 @@ import {
   ChevronRight,
   ChevronDown,
   X,
-} from "lucide-react"
+} from "lucide-react";
+// Add a comment to remind user to install socket.io-client if not already installed
+// npm install socket.io-client
+import { io } from "socket.io-client";
+import toast from "react-hot-toast";
 
 interface StatCard {
-  title: string
-  value: string
-  change: string
-  icon: string
+  title: string;
+  value: string;
+  change: string;
+  icon: string;
 }
 
 interface School {
-  id: string
-  name: string
-  studentNumber: number
-  joiningDate: string
-  accreditationPeriod: string
-  status?: "pending" | "approved"
+  id: string;
+  name: string;
+  country: string;
+  joiningDate: string;
+  accreditationPeriod: string;
+  status?: "pending" | "approved" | "denied" | "rejected";
+  evaluator_id: string;
+  created_at: string;
 }
 
 interface Evaluator {
-  id: string
-  name: string
-  operatingLocation: string
-  joiningDate: string
-  workingPeriod: string
+  id: string;
+  name: string;
+  email: string;
+  created_at: string;
 }
 
 interface Report {
-  id: string
-  name: string
-  schoolLocation: string
-  evaluatorName: string
-  uploadDate: string
-  schoolName: string
-  documents: string[]
+  id: string;
+  name: string;
+  schoolLocation: string;
+  evaluatorName: string;
+  uploadDate: string;
+  schoolName: string;
+  documents: string[];
 }
 
 interface Message {
-  id: string
-  sender: string
-  role: string
-  message: string
-  timestamp: string
-  avatar: string
-  type: "headmaster" | "evaluator" | "trainer"
+  id: string;
+  sender: string;
+  role: string;
+  message: string;
+  timestamp: string;
+  avatar: string;
+  type: "headmaster" | "evaluator" | "trainer";
 }
 
 interface MessageTab {
-  id: string
-  label: string
-  count: number
-  type: "all" | "headmaster" | "evaluator" | "trainer"
+  id: string;
+  label: string;
+  count: number;
+  type: "all" | "headmaster" | "evaluator" | "trainer";
+}
+
+// --- Conversation-based Messaging State ---
+// Conversation and message types
+interface Conversation {
+  id: string;
+  participants: any[]; // user objects or group info
+  last_message: string;
+  updated_at: string;
+  type: string; // 'user' | 'group'
+  group?: string; // group name if group
+  name?: string; // display name
+}
+interface ConversationMessage {
+  id: string;
+  sender_id: string;
+  sender_name: string;
+  sender_role: string;
+  message: string;
+  timestamp: string;
+  avatar?: string;
 }
 
 const AdminDashboard: React.FC = () => {
   // ...existing state and logic
 
-  const [activeTab, setActiveTab] = useState<string>("dashboard")
-  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null)
-  const [activeMessageTab, setActiveMessageTab] = useState<string>("all")
-  const [showReportModal, setShowReportModal] = useState<boolean>(false)
-  const [selectedReport, setSelectedReport] = useState<Report | null>(null)
-  const [sidebarOpen, setSidebarOpen] = useState<boolean>(false)
-  const [showMobileMessageList, setShowMobileMessageList] = useState<boolean>(true)
+  const [activeTab, setActiveTab] = useState<string>("dashboard");
+  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
+  const [activeMessageTab, setActiveMessageTab] = useState<string>("all");
+  const [showReportModal, setShowReportModal] = useState<boolean>(false);
+  const [selectedReport, setSelectedReport] = useState<Report | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
+  const [showMobileMessageList, setShowMobileMessageList] =
+    useState<boolean>(true);
 
   // --- Integration: Fetch data from backend ---
   const [stats, setStats] = useState<StatCard[]>([]);
@@ -94,39 +121,138 @@ const AdminDashboard: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Add at the top of the component:
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const [notifications, setNotifications] = useState<any[]>([]);
+
+  const [showCompose, setShowCompose] = useState(false);
+  const [composeRecipient, setComposeRecipient] = useState("");
+  const [composeMessage, setComposeMessage] = useState("");
+  const [composeRecipientType, setComposeRecipientType] = useState("group"); // 'group' or 'user'
+  const [composeGroup, setComposeGroup] = useState("");
+  const [composeUserId, setComposeUserId] = useState("");
+  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [messageInput, setMessageInput] = useState<string>("");
+
+  // Conversation state
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [selectedConversation, setSelectedConversation] =
+    useState<Conversation | null>(null);
+  const [conversationMessages, setConversationMessages] = useState<
+    ConversationMessage[]
+  >([]);
+  const [conversationLoading, setConversationLoading] = useState(false);
+  const [conversationError, setConversationError] = useState<string | null>(
+    null
+  );
+
+  // Assignment modal state
+  const [showAssignmentModal, setShowAssignmentModal] = useState(false);
+  const [selectedSchoolForAssignment, setSelectedSchoolForAssignment] =
+    useState<any>(null);
+  const [selectedEvaluatorForAssignment, setSelectedEvaluatorForAssignment] =
+    useState("");
+  const [assignmentLoading, setAssignmentLoading] = useState(false);
+  const [assignmentError, setAssignmentError] = useState<string | null>(null);
+  const [assignmentSuccess, setAssignmentSuccess] = useState<string | null>(
+    null
+  );
+
+  // Profile state
+  const [profile, setProfile] = useState<any>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
+  const [profileFormData, setProfileFormData] = useState({
+    name: "",
+    email: "",
+  });
+
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       setError(null);
       try {
-        const token = localStorage.getItem('token');
-        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const token = localStorage.getItem("token");
+        const headers: Record<string, string> = token
+          ? { Authorization: `Bearer ${token}` }
+          : {};
         // Fetch stats (custom endpoint or aggregate manually)
         const [schoolsRes, evaluatorsRes, reportsRes] = await Promise.all([
-          fetch(`${import.meta.env.VITE_API_URL}/api/admin/schools`, { headers }),
-          fetch(`${import.meta.env.VITE_API_URL}/api/admin/evaluators`, { headers }),
-          fetch(`${import.meta.env.VITE_API_URL}/api/admin/reports`, { headers }),
+          fetch(`${import.meta.env.VITE_API_URL}/api/admin/schools`, {
+            headers,
+          }),
+          fetch(`${import.meta.env.VITE_API_URL}/api/admin/evaluators`, {
+            headers,
+          }),
+          fetch(`${import.meta.env.VITE_API_URL}/api/admin/reports`, {
+            headers,
+          }),
         ]);
         if (!schoolsRes.ok || !evaluatorsRes.ok || !reportsRes.ok) {
-          throw new Error('Failed to fetch dashboard data');
+          throw new Error("Failed to fetch dashboard data");
         }
         const schoolsData = await schoolsRes.json();
         const evaluatorsData = await evaluatorsRes.json();
         const reportsData = await reportsRes.json();
 
         setStats([
-          { title: 'Total Schools', value: schoolsData.length.toString(), change: '', icon: '$' },
-          { title: 'Total Evaluators', value: evaluatorsData.length.toString(), change: '', icon: '$' },
-          { title: 'Total Reports', value: reportsData.length.toString(), change: '', icon: '$' },
-          { title: 'Total Evaluations', value: reportsData.length.toString(), change: '', icon: '$' },
+          {
+            title: "Total Schools",
+            value: schoolsData.schools.length.toString(),
+            change: "",
+            icon: "$",
+          },
+          {
+            title: "Total Evaluators",
+            value: evaluatorsData.evaluators.length.toString(),
+            change: "",
+            icon: "$",
+          },
+          {
+            title: "Total Reports",
+            value: reportsData.reports.length.toString(),
+            change: "",
+            icon: "$",
+          },
+          {
+            title: "Total Evaluations",
+            value: reportsData.reports.length.toString(),
+            change: "",
+            icon: "$",
+          },
         ]);
-        setRecentSchools(schoolsData.slice(0, 3));
-        setRequestedSchools(schoolsData.filter((s: any) => s.status === 'pending'));
-        setAccreditedSchools(schoolsData.filter((s: any) => s.status === 'approved'));
-        setEvaluators(evaluatorsData);
-        setReports(reportsData);
+        setRecentSchools(schoolsData.schools.slice(0, 3));
+        setRequestedSchools(
+          schoolsData.schools.filter((s: School) => s.status === "pending")
+        );
+        setAccreditedSchools(
+          schoolsData.schools.filter((s: School) => s.status === "approved")
+        );
+        setEvaluators(evaluatorsData.evaluators);
+        // Map reports to include schoolName, schoolLocation, evaluatorName, and uploadDate
+        const reportsWithDetails = reportsData.reports.map((report: any) => {
+          const school = schoolsData.schools.find(
+            (s: any) => String(s.id) === String(report.school_id)
+          );
+          const evaluator = evaluatorsData.evaluators.find(
+            (e: any) => String(e.id) === String(report.evaluator_id)
+          );
+          return {
+            ...report,
+            schoolName: school ? school.name : "",
+            schoolLocation: school ? school.country : "",
+            evaluatorName: evaluator ? evaluator.name : "",
+            uploadDate: report.submitted_at
+              ? new Date(report.submitted_at).toLocaleString()
+              : "",
+            documents: report.report_path ? [report.report_path] : [],
+          };
+        });
+        setReports(reportsWithDetails);
       } catch (err: any) {
-        setError(err.message || 'Error loading dashboard');
+        setError(err.message || "Error loading dashboard");
       } finally {
         setLoading(false);
       }
@@ -134,69 +260,253 @@ const AdminDashboard: React.FC = () => {
     fetchData();
   }, []);
 
+  useEffect(() => {
+    const socket = io(import.meta.env.VITE_API_URL);
+    console.log("Socket.IO client initialized", socket);
+
+    const userId = localStorage.getItem("userId");
+    if (userId) {
+      socket.emit("register", userId);
+      console.log("Register event emitted for userId:", userId);
+    } else {
+      console.warn(
+        "No userId found in localStorage during socket registration"
+      );
+    }
+
+    socket.on("receive-message", (data: any) => {
+      console.log("Received message via socket:", data);
+      setNotifications((prev) => [
+        {
+          id: Date.now().toString(),
+          message: data.message,
+          timestamp: new Date().toLocaleString(),
+        },
+        ...prev,
+      ]);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    // Fetch all users for the custom user dropdown
+    const fetchAllUsers = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(
+          `${import.meta.env.VITE_API_URL}/api/admin/users`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        if (!res.ok) throw new Error("Failed to fetch users");
+        const data = await res.json();
+        setAllUsers(data.users || []);
+      } catch (err) {
+        setAllUsers([]);
+      }
+    };
+    fetchAllUsers();
+  }, []);
+
+  // Fetch profile when settings tab is active
+  useEffect(() => {
+    if (activeTab === "settings") {
+      fetchProfile();
+    }
+  }, [activeTab]);
+
+  const fetchProfile = async () => {
+    setProfileLoading(true);
+    setProfileError(null);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/admin/profile`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!res.ok) throw new Error("Failed to fetch profile");
+      const data = await res.json();
+      setProfile(data.profile);
+      setProfileFormData({
+        name: data.profile.name || "",
+        email: data.profile.email || "",
+      });
+    } catch (err: any) {
+      setProfileError(err.message || "Error loading profile");
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  const updateProfile = async () => {
+    setProfileLoading(true);
+    setProfileError(null);
+    setProfileSuccess(null);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/admin/profile`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(profileFormData),
+        }
+      );
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.message || "Failed to update profile");
+      }
+      const data = await res.json();
+      setProfile(data.profile);
+      setProfileSuccess("Profile updated successfully!");
+      toast.success("Profile updated successfully!");
+    } catch (err: any) {
+      setProfileError(err.message || "Error updating profile");
+      toast.error("Failed to update profile");
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
   const messageTabs: MessageTab[] = [
     { id: "all", label: "All messages", count: 8, type: "all" },
     { id: "headmaster", label: "Headmaster", count: 3, type: "headmaster" },
     { id: "evaluator", label: "Evaluator", count: 2, type: "evaluator" },
     { id: "trainer", label: "Trainer", count: 3, type: "trainer" },
-  ]
+  ];
 
-  // Messaging state and backend integration
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [messageLoading, setMessageLoading] = useState<boolean>(false);
-  const [messageError, setMessageError] = useState<string | null>(null);
-
-  // Fetch inbox messages on mount or when messaging tab is active
+  // Fetch conversations when messaging tab is active
   useEffect(() => {
-    if (activeTab === 'messaging') {
-      fetchMessages();
+    if (activeTab === "messaging") {
+      fetchConversations();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
-  const fetchMessages = async () => {
-    setMessageLoading(true);
-    setMessageError(null);
+  const fetchConversations = async () => {
+    setConversationLoading(true);
+    setConversationError(null);
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/message/inbox`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error('Failed to fetch messages');
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/message/conversations`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!res.ok) throw new Error("Failed to fetch conversations");
       const data = await res.json();
-      setMessages(data);
+      setConversations(data.conversations || []);
     } catch (err: any) {
-      setMessageError(err.message || 'Error loading messages');
+      setConversationError(err.message || "Error loading conversations");
     } finally {
-      setMessageLoading(false);
+      setConversationLoading(false);
     }
   };
 
-  const getFilteredMessages = () => {
-    if (activeMessageTab === "all") return messages;
-    return messages.filter((message) => message.type === activeMessageTab);
+  const fetchConversationMessages = async (conversationId: string) => {
+    setConversationLoading(true);
+    setConversationError(null);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${
+          import.meta.env.VITE_API_URL
+        }/api/message/conversation/${conversationId}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!res.ok) throw new Error("Failed to fetch messages");
+      const data = await res.json();
+      console.log("Fetched messages:", data);
+      setConversationMessages(data.messages || []);
+    } catch (err: any) {
+      setConversationError(err.message || "Error loading messages");
+    } finally {
+      setConversationLoading(false);
+    }
   };
 
-  // Send message handler
-  const sendMessage = async (msg: { recipientId: string; message: string; type?: string }) => {
-    setMessageLoading(true);
-    setMessageError(null);
+  const sendConversationMessage = async (
+    conversationId: string,
+    message: string
+  ) => {
+    console.log(
+      "sendConversationMessage called with:",
+      conversationId,
+      message
+    );
+    setConversationLoading(true);
+    setConversationError(null);
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/message/send`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(msg),
-      });
-      if (!res.ok) throw new Error('Failed to send message');
-      await fetchMessages(); // Refresh inbox after sending
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/message/send`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ conversationId, message }),
+        }
+      );
+      console.log("Fetch response:", res);
+      if (!res.ok) throw new Error("Failed to send message");
+      await fetchConversationMessages(conversationId); // Refresh messages
+      setMessageInput(""); // Clear input
     } catch (err: any) {
-      setMessageError(err.message || 'Error sending message');
+      setConversationError(err.message || "Error sending message");
+      console.error("Error in sendConversationMessage:", err);
     } finally {
-      setMessageLoading(false);
+      setConversationLoading(false);
+    }
+  };
+
+  const startNewConversation = async (
+    recipientType: string,
+    recipient: string,
+    message: string
+  ) => {
+    setConversationLoading(true);
+    setConversationError(null);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/message/send`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            recipientId: recipient,
+            message,
+            type: recipientType,
+          }),
+        }
+      );
+      if (!res.ok) throw new Error("Failed to send message");
+      await fetchConversations();
+      setShowCompose(false);
+      setComposeGroup("");
+      setComposeUserId("");
+      setComposeMessage("");
+    } catch (err: any) {
+      setConversationError(err.message || "Error starting conversation");
+    } finally {
+      setConversationLoading(false);
     }
   };
 
@@ -205,20 +515,23 @@ const AdminDashboard: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/change-status`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ schoolId, status: 'approved' }),
-      });
-      if (!res.ok) throw new Error('Failed to approve school');
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/admin/change-status`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ schoolId, status: "approved" }),
+        }
+      );
+      if (!res.ok) throw new Error("Failed to approve school");
       // Refresh schools
       await refreshSchools();
     } catch (err: any) {
-      setError(err.message || 'Error approving school');
+      setError(err.message || "Error approving school");
     } finally {
       setLoading(false);
     }
@@ -228,19 +541,22 @@ const AdminDashboard: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/change-status`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ schoolId, status: 'denied' }),
-      });
-      if (!res.ok) throw new Error('Failed to deny school');
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/admin/change-status`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ schoolId, status: "denied" }),
+        }
+      );
+      if (!res.ok) throw new Error("Failed to deny school");
       await refreshSchools();
     } catch (err: any) {
-      setError(err.message || 'Error denying school');
+      setError(err.message || "Error denying school");
     } finally {
       setLoading(false);
     }
@@ -250,15 +566,18 @@ const AdminDashboard: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/reports/${reportId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error('Failed to delete report');
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/admin/reports/${reportId}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!res.ok) throw new Error("Failed to delete report");
       await refreshReports();
     } catch (err: any) {
-      setError(err.message || 'Error deleting report');
+      setError(err.message || "Error deleting report");
     } finally {
       setLoading(false);
     }
@@ -266,14 +585,19 @@ const AdminDashboard: React.FC = () => {
 
   const handleDownload = async (reportId: string) => {
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/reports/${reportId}/download`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error('Failed to download report');
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${
+          import.meta.env.VITE_API_URL
+        }/api/admin/reports/${reportId}/download`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!res.ok) throw new Error("Failed to download report");
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = url;
       link.download = `report_${reportId}.pdf`;
       document.body.appendChild(link);
@@ -281,7 +605,7 @@ const AdminDashboard: React.FC = () => {
       link.remove();
       window.URL.revokeObjectURL(url);
     } catch (err: any) {
-      setError(err.message || 'Error downloading report');
+      setError(err.message || "Error downloading report");
     }
   };
 
@@ -294,55 +618,115 @@ const AdminDashboard: React.FC = () => {
   // --- Refresh helpers ---
   const refreshSchools = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const schoolsRes = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/schools`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!schoolsRes.ok) throw new Error('Failed to refresh schools');
+      const token = localStorage.getItem("token");
+      const schoolsRes = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/admin/schools`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!schoolsRes.ok) throw new Error("Failed to refresh schools");
       const schoolsData = await schoolsRes.json();
+      console.log("[RefreshSchools] schoolsData:", schoolsData);
       setRecentSchools(schoolsData.slice(0, 3));
-      setRequestedSchools(schoolsData.filter((s: any) => s.status === 'pending'));
-      setAccreditedSchools(schoolsData.filter((s: any) => s.status === 'approved'));
+      setRequestedSchools(
+        schoolsData.filter((s: School) => s.status === "pending")
+      );
+      setAccreditedSchools(
+        schoolsData.filter((s: School) => s.status === "approved")
+      );
     } catch (err: any) {
-      setError(err.message || 'Error refreshing schools');
+      console.error("[RefreshSchools] Error:", err);
+      setError(err.message || "Error refreshing schools");
     }
   };
 
   const refreshReports = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const reportsRes = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/reports`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!reportsRes.ok) throw new Error('Failed to refresh reports');
+      const token = localStorage.getItem("token");
+      // Fetch all needed data
+      const [schoolsRes, evaluatorsRes, reportsRes] = await Promise.all([
+        fetch(`${import.meta.env.VITE_API_URL}/api/admin/schools`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`${import.meta.env.VITE_API_URL}/api/admin/evaluators`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`${import.meta.env.VITE_API_URL}/api/admin/reports`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+      if (!schoolsRes.ok || !evaluatorsRes.ok || !reportsRes.ok) {
+        throw new Error("Failed to refresh reports");
+      }
+      const schoolsData = await schoolsRes.json();
+      const evaluatorsData = await evaluatorsRes.json();
       const reportsData = await reportsRes.json();
-      setReports(reportsData);
+
+      // Map reports as before
+      const reportsWithDetails = reportsData.reports.map((report: any) => {
+        const school = schoolsData.schools.find(
+          (s: any) => String(s.id) === String(report.school_id)
+        );
+        const evaluator = evaluatorsData.evaluators.find(
+          (e: any) => String(e.id) === String(report.evaluator_id)
+        );
+        return {
+          ...report,
+          schoolName: school ? school.name : "",
+          schoolLocation: school ? school.country : "",
+          evaluatorName: evaluator ? evaluator.name : "",
+          uploadDate: report.submitted_at
+            ? new Date(report.submitted_at).toLocaleString()
+            : "",
+          documents: report.report_path ? [report.report_path] : [],
+        };
+      });
+      setReports(reportsWithDetails);
     } catch (err: any) {
-      setError(err.message || 'Error refreshing reports');
+      setError(err.message || "Error refreshing reports");
     }
   };
   // --- End Backend integration handlers ---
-
 
   const sidebarItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "schools", label: "Schools", icon: SchoolIcon },
     { id: "evaluators", label: "Evaluators", icon: Users },
-    { id: "evaluation-reports", label: "Evaluation and Reports", icon: FileText },
+    {
+      id: "evaluation-reports",
+      label: "Evaluation and Reports",
+      icon: FileText,
+    },
     { id: "messaging", label: "Messaging", icon: MessageSquare },
     { id: "settings", label: "Settings", icon: Settings },
-  ]
+  ];
 
   // Mobile Card Component
-  const MobileCard = ({ children, className = "" }: { children: React.ReactNode; className?: string }) => (
-    <div className={`bg-white p-4 rounded-lg shadow-sm border space-y-3 ${className}`}>{children}</div>
-  )
+  const MobileCard = ({
+    children,
+    className = "",
+  }: {
+    children: React.ReactNode;
+    className?: string;
+  }) => (
+    <div
+      className={`bg-white p-4 rounded-lg shadow-sm border space-y-3 ${className}`}
+    >
+      {children}
+    </div>
+  );
 
   const renderDashboard = () => (
     <div className="space-y-4 sm:space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Dashboard</h1>
-        <button className="lg:hidden p-2 rounded-lg bg-[#1B365D] text-white" onClick={() => setSidebarOpen(true)}>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+          Dashboard
+        </h1>
+        <button
+          className="lg:hidden p-2 rounded-lg bg-[#1B365D] text-white"
+          onClick={() => setSidebarOpen(true)}
+        >
           <Menu size={20} />
         </button>
       </div>
@@ -350,18 +734,29 @@ const AdminDashboard: React.FC = () => {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         {stats.map((stat, index) => (
-          <div key={index} className="bg-white rounded-lg p-4 sm:p-6 shadow-sm border">
+          <div
+            key={index}
+            className="bg-white rounded-lg p-4 sm:p-6 shadow-sm border"
+          >
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs sm:text-sm font-medium text-gray-600">{stat.title}</p>
-                <p className="text-lg sm:text-2xl font-bold text-gray-900">{stat.value}</p>
+                <p className="text-xs sm:text-sm font-medium text-gray-600">
+                  {stat.title}
+                </p>
+                <p className="text-lg sm:text-2xl font-bold text-gray-900">
+                  {stat.value}
+                </p>
                 <div className="flex items-center mt-2">
                   <TrendingUp size={14} className="text-green-500 mr-1" />
-                  <span className="text-xs sm:text-sm text-green-500">{stat.change}</span>
+                  <span className="text-xs sm:text-sm text-green-500">
+                    {stat.change}
+                  </span>
                 </div>
               </div>
               <div className="bg-[#1B365D] text-white p-2 sm:p-3 rounded-lg">
-                <span className="text-sm sm:text-lg font-bold">{stat.icon}</span>
+                <span className="text-sm sm:text-lg font-bold">
+                  {stat.icon}
+                </span>
               </div>
             </div>
           </div>
@@ -372,14 +767,19 @@ const AdminDashboard: React.FC = () => {
       <div className="bg-white rounded-lg shadow-sm border">
         <div className="p-4 sm:p-6 border-b border-gray-200">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h2 className="text-lg font-semibold text-gray-900">Recent Schools</h2>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Recent Schools
+            </h2>
             <button className="bg-[#1B365D] text-white px-4 py-2 rounded-lg text-sm font-medium w-full sm:w-auto">
               See All
             </button>
           </div>
           <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
             <div className="relative flex-1">
-              <Search size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <Search
+                size={20}
+                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+              />
               <input
                 type="text"
                 placeholder="Search School"
@@ -401,27 +801,46 @@ const AdminDashboard: React.FC = () => {
                   School Name
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Student Number
+                  Country
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Joining Date
+                  Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Accreditation Period
+                  Evaluator Name
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Created At
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {recentSchools.map((school) => (
-                <tr key={school.id}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{school.name}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {school.studentNumber.toLocaleString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{school.joiningDate}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{school.accreditationPeriod}</td>
-                </tr>
-              ))}
+              {recentSchools.map((school) => {
+                const evaluator = evaluators.find(
+                  (e) => String(e.id) === String(school.evaluator_id)
+                );
+                return (
+                  <tr key={school.name}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {school.name}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {school.country}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {school.status}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {evaluator ? evaluator.name : ""}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {school.created_at
+                        ? new Date(school.created_at).toLocaleString()
+                        : ""}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -429,113 +848,17 @@ const AdminDashboard: React.FC = () => {
         {/* Mobile Cards */}
         <div className="md:hidden p-4 space-y-4">
           {recentSchools.map((school) => (
-            <MobileCard key={school.id}>
+            <MobileCard key={school.name}>
               <div className="flex justify-between items-start">
                 <div>
                   <h3 className="font-medium text-gray-900">{school.name}</h3>
-                  <p className="text-sm text-gray-500">Students: {school.studentNumber.toLocaleString()}</p>
+                  <p className="text-sm text-gray-500">
+                    Country: {school.country}
+                  </p>
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-gray-500">Joining Date:</span>
-                  <p className="font-medium">{school.joiningDate}</p>
-                </div>
-                <div>
-                  <span className="text-gray-500">Period:</span>
-                  <p className="font-medium">{school.accreditationPeriod}</p>
-                </div>
-              </div>
-            </MobileCard>
-          ))}
-        </div>
-      </div>
-
-      {/* Requested Schools */}
-      <div className="bg-white rounded-lg shadow-sm border">
-        <div className="p-4 sm:p-6 border-b border-gray-200">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h2 className="text-lg font-semibold text-gray-900">Requested Schools</h2>
-            <button className="bg-[#1B365D] text-white px-4 py-2 rounded-lg text-sm font-medium w-full sm:w-auto">
-              See All
-            </button>
-          </div>
-          <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
-            <div className="relative flex-1">
-              <Search size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search School"
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1B365D] focus:border-transparent"
-              />
-            </div>
-            <select className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#1B365D] focus:border-transparent">
-              <option>Latest</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Desktop Table */}
-        <div className="hidden md:block overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  School Name
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Student Number
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Joining Date
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Accreditation Period
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Action
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {requestedSchools.map((school) => (
-                <tr key={school.id}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{school.name}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {school.studentNumber.toLocaleString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{school.joiningDate}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{school.accreditationPeriod}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
-                    <button
-                      onClick={() => handleApprove(school.id)}
-                      className="bg-[#1B365D] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#2563EB] transition-colors"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => handleDeny(school.id)}
-                      className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
-                    >
-                      Deny
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Mobile Cards */}
-        <div className="md:hidden p-4 space-y-4">
-          {requestedSchools.map((school) => (
-            <MobileCard key={school.id}>
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="font-medium text-gray-900">{school.name}</h3>
-                  <p className="text-sm text-gray-500">Students: {school.studentNumber.toLocaleString()}</p>
-                </div>
-                <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">Pending</span>
+                <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
+                  Pending
+                </span>
               </div>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
@@ -566,18 +889,186 @@ const AdminDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Recent Evaluators */}
+      {/* Requested Schools */}
       <div className="bg-white rounded-lg shadow-sm border">
         <div className="p-4 sm:p-6 border-b border-gray-200">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h2 className="text-lg font-semibold text-gray-900">Recent Evaluators</h2>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Requested Schools
+            </h2>
             <button className="bg-[#1B365D] text-white px-4 py-2 rounded-lg text-sm font-medium w-full sm:w-auto">
               See All
             </button>
           </div>
           <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
             <div className="relative flex-1">
-              <Search size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <Search
+                size={20}
+                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+              />
+              <input
+                type="text"
+                placeholder="Search School"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1B365D] focus:border-transparent"
+              />
+            </div>
+            <select className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#1B365D] focus:border-transparent">
+              <option>Latest</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Desktop Table */}
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  School Name
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Country
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Evaluator Name
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Created At
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {requestedSchools
+                .filter((school) => school.status === "pending")
+                .map((school) => {
+                  const evaluator = evaluators.find(
+                    (e) => String(e.id) === String(school.evaluator_id)
+                  );
+                  return (
+                    <tr key={school.name}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {school.name}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {school.country}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {school.status}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {evaluator ? evaluator.name : ""}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {school.created_at
+                          ? new Date(school.created_at).toLocaleString()
+                          : ""}
+                      </td>
+                      {!school.evaluator_id && (
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 space-x-2">
+                          <button
+                            onClick={() => handleApproveSchool(school.id)}
+                            className="bg-[#1B365D] text-white px-3 py-2 rounded text-sm hover:bg-[#2563EB] transition-colors"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => handleDenySchool(school.id)}
+                            className="bg-red-600 text-white px-3 py-2 rounded text-sm hover:bg-red-700 transition-colors"
+                          >
+                            Deny
+                          </button>
+                          <button
+                            onClick={() => openAssignmentModal(school)}
+                            className="bg-blue-600 text-white px-3 py-2 rounded text-sm hover:bg-blue-700 transition-colors"
+                          >
+                            Assign Evaluator
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Mobile Cards */}
+        <div className="md:hidden p-4 space-y-4">
+          {requestedSchools
+            .filter((school) => school.status === "pending")
+            .map((school) => (
+              <MobileCard key={school.name}>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-medium text-gray-900">{school.name}</h3>
+                    <p className="text-sm text-gray-500">
+                      Country: {school.country}
+                    </p>
+                  </div>
+                  <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
+                    Pending
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-500">Joining Date:</span>
+                    <p className="font-medium">{school.joiningDate}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Period:</span>
+                    <p className="font-medium">{school.accreditationPeriod}</p>
+                  </div>
+                </div>
+                {!school.evaluator_id && (
+                  <div className="flex flex-col sm:flex-row gap-2 mt-2">
+                    <button
+                      onClick={() => handleApproveSchool(school.id)}
+                      className="bg-[#1B365D] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#2563EB] transition-colors"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => handleDenySchool(school.id)}
+                      className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
+                    >
+                      Deny
+                    </button>
+                    <button
+                      onClick={() => openAssignmentModal(school)}
+                      className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                    >
+                      Assign Evaluator
+                    </button>
+                  </div>
+                )}
+              </MobileCard>
+            ))}
+        </div>
+      </div>
+
+      {/* Recent Evaluators */}
+      <div className="bg-white rounded-lg shadow-sm border">
+        <div className="p-4 sm:p-6 border-b border-gray-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <h2 className="text-lg font-semibold text-gray-900">
+              Recent Evaluators
+            </h2>
+            <button className="bg-[#1B365D] text-white px-4 py-2 rounded-lg text-sm font-medium w-full sm:w-auto">
+              See All
+            </button>
+          </div>
+          <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
+            <div className="relative flex-1">
+              <Search
+                size={20}
+                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+              />
               <input
                 type="text"
                 placeholder="Search Evaluator"
@@ -599,23 +1090,27 @@ const AdminDashboard: React.FC = () => {
                   Evaluator Name
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Operating Location
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Joining Date
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Working Period
+                  Email
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {evaluators.slice(0, 3).map((evaluator) => (
                 <tr key={evaluator.id}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{evaluator.name}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{evaluator.operatingLocation}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{evaluator.joiningDate}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{evaluator.workingPeriod}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {evaluator.name}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {evaluator.created_at
+                      ? new Date(evaluator.created_at).toLocaleString()
+                      : ""}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {evaluator.email}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -626,18 +1121,19 @@ const AdminDashboard: React.FC = () => {
         <div className="md:hidden p-4 space-y-4">
           {evaluators.slice(0, 3).map((evaluator) => (
             <MobileCard key={evaluator.id}>
-              <div>
-                <h3 className="font-medium text-gray-900">{evaluator.name}</h3>
-                <p className="text-sm text-gray-500">{evaluator.operatingLocation}</p>
-              </div>
+              <div className="font-medium text-gray-900">{evaluator.name}</div>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <span className="text-gray-500">Joining Date:</span>
-                  <p className="font-medium">{evaluator.joiningDate}</p>
+                  <p className="font-medium">
+                    {evaluator.created_at
+                      ? new Date(evaluator.created_at).toLocaleString()
+                      : ""}
+                  </p>
                 </div>
                 <div>
-                  <span className="text-gray-500">Working Period:</span>
-                  <p className="font-medium">{evaluator.workingPeriod}</p>
+                  <span className="text-gray-500">Email:</span>
+                  <p className="font-medium">{evaluator.email}</p>
                 </div>
               </div>
             </MobileCard>
@@ -649,14 +1145,19 @@ const AdminDashboard: React.FC = () => {
       <div className="bg-white rounded-lg shadow-sm border">
         <div className="p-4 sm:p-6 border-b border-gray-200">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h2 className="text-lg font-semibold text-gray-900">Recent Reports</h2>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Recent Reports
+            </h2>
             <button className="bg-[#1B365D] text-white px-4 py-2 rounded-lg text-sm font-medium w-full sm:w-auto">
               See All
             </button>
           </div>
           <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
             <div className="relative flex-1">
-              <Search size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <Search
+                size={20}
+                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+              />
               <input
                 type="text"
                 placeholder="Search Report"
@@ -675,9 +1176,6 @@ const AdminDashboard: React.FC = () => {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Report Name
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   School Location
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -694,10 +1192,15 @@ const AdminDashboard: React.FC = () => {
             <tbody className="bg-white divide-y divide-gray-200">
               {reports.slice(0, 7).map((report) => (
                 <tr key={report.id}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{report.name}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{report.schoolLocation}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{report.evaluatorName}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{report.uploadDate}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {report.schoolLocation}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {report.evaluatorName}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {report.uploadDate}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
                     <button
                       onClick={() => handleDownload(report.id)}
@@ -767,13 +1270,16 @@ const AdminDashboard: React.FC = () => {
         </div>
       </div>
     </div>
-  )
+  );
 
   const renderSchools = () => (
     <div className="space-y-4 sm:space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Schools</h1>
-        <button className="lg:hidden p-2 rounded-lg bg-[#1B365D] text-white" onClick={() => setSidebarOpen(true)}>
+        <button
+          className="lg:hidden p-2 rounded-lg bg-[#1B365D] text-white"
+          onClick={() => setSidebarOpen(true)}
+        >
           <Menu size={20} />
         </button>
       </div>
@@ -782,14 +1288,19 @@ const AdminDashboard: React.FC = () => {
       <div className="bg-white rounded-lg shadow-sm border">
         <div className="p-4 sm:p-6 border-b border-gray-200">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h2 className="text-lg font-semibold text-gray-900">Requested Schools (5)</h2>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Requested Schools
+            </h2>
             <button className="bg-[#1B365D] text-white px-4 py-2 rounded-lg text-sm font-medium w-full sm:w-auto">
               Load More
             </button>
           </div>
           <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
             <div className="relative flex-1">
-              <Search size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <Search
+                size={20}
+                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+              />
               <input
                 type="text"
                 placeholder="Search School"
@@ -811,85 +1322,124 @@ const AdminDashboard: React.FC = () => {
                   School Name
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Student Number
+                  Country
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Joining Date
+                  Status
+                </th>
+
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Created At
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Accreditation Period
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Action
+                  Actions
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {requestedSchools.map((school) => (
-                <tr key={school.id}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{school.name}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {school.studentNumber.toLocaleString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{school.joiningDate}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{school.accreditationPeriod}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
-                    <button
-                      onClick={() => handleApprove(school.id)}
-                      className="bg-[#1B365D] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#2563EB] transition-colors"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => handleDeny(school.id)}
-                      className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
-                    >
-                      Deny
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {requestedSchools
+                .filter((school) => school.status === "pending")
+                .map((school) => {
+                  const evaluator = evaluators.find(
+                    (e) => String(e.id) === String(school.evaluator_id)
+                  );
+                  return (
+                    <tr key={school.name}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {school.name}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {school.country}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {school.status}
+                      </td>
+
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {school.created_at
+                          ? new Date(school.created_at).toLocaleString()
+                          : ""}
+                      </td>
+                      {!school.evaluator_id && (
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 space-x-2">
+                          <button
+                            onClick={() => handleApproveSchool(school.id)}
+                            className="bg-[#1B365D] text-white px-3 py-2 rounded text-sm hover:bg-[#2563EB] transition-colors"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => handleDenySchool(school.id)}
+                            className="bg-red-600 text-white px-3 py-2 rounded text-sm hover:bg-red-700 transition-colors"
+                          >
+                            Deny
+                          </button>
+                          <button
+                            onClick={() => openAssignmentModal(school)}
+                            className="bg-blue-600 text-white px-3 py-2 rounded text-sm hover:bg-blue-700 transition-colors"
+                          >
+                            Assign Evaluator
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
         </div>
 
         {/* Mobile Cards */}
         <div className="md:hidden p-4 space-y-4">
-          {requestedSchools.map((school) => (
-            <MobileCard key={school.id}>
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="font-medium text-gray-900">{school.name}</h3>
-                  <p className="text-sm text-gray-500">Students: {school.studentNumber.toLocaleString()}</p>
+          {requestedSchools
+            .filter((school) => school.status === "pending")
+            .map((school) => (
+              <MobileCard key={school.name}>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-medium text-gray-900">{school.name}</h3>
+                    <p className="text-sm text-gray-500">
+                      Country: {school.country}
+                    </p>
+                  </div>
+                  <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
+                    Pending
+                  </span>
                 </div>
-                <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">Pending</span>
-              </div>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-gray-500">Joining Date:</span>
-                  <p className="font-medium">{school.joiningDate}</p>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-500">Joining Date:</span>
+                    <p className="font-medium">{school.joiningDate}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Period:</span>
+                    <p className="font-medium">{school.accreditationPeriod}</p>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-gray-500">Period:</span>
-                  <p className="font-medium">{school.accreditationPeriod}</p>
-                </div>
-              </div>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <button
-                  onClick={() => handleApprove(school.id)}
-                  className="bg-[#1B365D] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#2563EB] transition-colors"
-                >
-                  Approve
-                </button>
-                <button
-                  onClick={() => handleDeny(school.id)}
-                  className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
-                >
-                  Deny
-                </button>
-              </div>
-            </MobileCard>
-          ))}
+                {!school.evaluator_id && (
+                  <div className="flex flex-col sm:flex-row gap-2 mt-2">
+                    <button
+                      onClick={() => handleApproveSchool(school.id)}
+                      className="bg-[#1B365D] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#2563EB] transition-colors"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => handleDenySchool(school.id)}
+                      className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
+                    >
+                      Deny
+                    </button>
+                    <button
+                      onClick={() => openAssignmentModal(school)}
+                      className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                    >
+                      Assign Evaluator
+                    </button>
+                  </div>
+                )}
+              </MobileCard>
+            ))}
         </div>
       </div>
 
@@ -897,14 +1447,19 @@ const AdminDashboard: React.FC = () => {
       <div className="bg-white rounded-lg shadow-sm border">
         <div className="p-4 sm:p-6 border-b border-gray-200">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h2 className="text-lg font-semibold text-gray-900">Accredited Schools (30)</h2>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Accredited Schools (30)
+            </h2>
             <button className="bg-[#1B365D] text-white px-4 py-2 rounded-lg text-sm font-medium w-full sm:w-auto">
               Load More
             </button>
           </div>
           <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
             <div className="relative flex-1">
-              <Search size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <Search
+                size={20}
+                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+              />
               <input
                 type="text"
                 placeholder="Search School"
@@ -926,27 +1481,59 @@ const AdminDashboard: React.FC = () => {
                   School Name
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Students Number
+                  Country
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Joining Date
+                  Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Accreditation Period
+                  Evaluator Name
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Created At
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {accreditedSchools.map((school) => (
-                <tr key={school.id}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{school.name}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {school.studentNumber.toLocaleString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{school.joiningDate}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{school.accreditationPeriod}</td>
-                </tr>
-              ))}
+              {accreditedSchools.map((school) => {
+                const evaluator = evaluators.find(
+                  (e) => String(e.id) === String(school.evaluator_id)
+                );
+                return (
+                  <tr key={school.name}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {school.name}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {school.country}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {school.status}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {evaluator ? evaluator.name : ""}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {school.created_at
+                        ? new Date(school.created_at).toLocaleString()
+                        : ""}
+                    </td>
+                    {!school.evaluator_id && (
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 space-x-2">
+                        <button
+                          onClick={() => openAssignmentModal(school)}
+                          className="bg-blue-600 text-white px-3 py-2 rounded text-sm hover:bg-blue-700 transition-colors"
+                        >
+                          Assign Evaluator
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -954,13 +1541,17 @@ const AdminDashboard: React.FC = () => {
         {/* Mobile Cards */}
         <div className="md:hidden p-4 space-y-4">
           {accreditedSchools.map((school) => (
-            <MobileCard key={school.id}>
+            <MobileCard key={school.name}>
               <div className="flex justify-between items-start">
                 <div>
                   <h3 className="font-medium text-gray-900">{school.name}</h3>
-                  <p className="text-sm text-gray-500">Students: {school.studentNumber.toLocaleString()}</p>
+                  <p className="text-sm text-gray-500">
+                    Country: {school.country}
+                  </p>
                 </div>
-                <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">Accredited</span>
+                <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
+                  Accredited
+                </span>
               </div>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
@@ -972,18 +1563,33 @@ const AdminDashboard: React.FC = () => {
                   <p className="font-medium">{school.accreditationPeriod}</p>
                 </div>
               </div>
+              {!school.evaluator_id && (
+                <div className="flex flex-col sm:flex-row gap-2 mt-2">
+                  <button
+                    onClick={() => openAssignmentModal(school)}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                  >
+                    Assign Evaluator
+                  </button>
+                </div>
+              )}
             </MobileCard>
           ))}
         </div>
       </div>
     </div>
-  )
+  );
 
   const renderEvaluators = () => (
     <div className="space-y-4 sm:space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Evaluators</h1>
-        <button className="lg:hidden p-2 rounded-lg bg-[#1B365D] text-white" onClick={() => setSidebarOpen(true)}>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+          Evaluators
+        </h1>
+        <button
+          className="lg:hidden p-2 rounded-lg bg-[#1B365D] text-white"
+          onClick={() => setSidebarOpen(true)}
+        >
           <Menu size={20} />
         </button>
       </div>
@@ -991,14 +1597,19 @@ const AdminDashboard: React.FC = () => {
       <div className="bg-white rounded-lg shadow-sm border">
         <div className="p-4 sm:p-6 border-b border-gray-200">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h2 className="text-lg font-semibold text-gray-900">Recent Evaluators (80)</h2>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Recent Evaluators (80)
+            </h2>
             <button className="bg-[#1B365D] text-white px-4 py-2 rounded-lg text-sm font-medium w-full sm:w-auto">
               Load More
             </button>
           </div>
           <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
             <div className="relative flex-1">
-              <Search size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <Search
+                size={20}
+                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+              />
               <input
                 type="text"
                 placeholder="Search Evaluator"
@@ -1020,23 +1631,27 @@ const AdminDashboard: React.FC = () => {
                   Evaluator Name
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Operating Location
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Joining Date
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Working Period
+                  Email
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {evaluators.map((evaluator) => (
                 <tr key={evaluator.id}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{evaluator.name}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{evaluator.operatingLocation}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{evaluator.joiningDate}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{evaluator.workingPeriod}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {evaluator.name}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {evaluator.created_at
+                      ? new Date(evaluator.created_at).toLocaleString()
+                      : ""}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {evaluator.email}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1047,18 +1662,19 @@ const AdminDashboard: React.FC = () => {
         <div className="md:hidden p-4 space-y-4">
           {evaluators.map((evaluator) => (
             <MobileCard key={evaluator.id}>
-              <div>
-                <h3 className="font-medium text-gray-900">{evaluator.name}</h3>
-                <p className="text-sm text-gray-500">{evaluator.operatingLocation}</p>
-              </div>
+              <div className="font-medium text-gray-900">{evaluator.name}</div>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <span className="text-gray-500">Joining Date:</span>
-                  <p className="font-medium">{evaluator.joiningDate}</p>
+                  <p className="font-medium">
+                    {evaluator.created_at
+                      ? new Date(evaluator.created_at).toLocaleString()
+                      : ""}
+                  </p>
                 </div>
                 <div>
-                  <span className="text-gray-500">Working Period:</span>
-                  <p className="font-medium">{evaluator.workingPeriod}</p>
+                  <span className="text-gray-500">Email:</span>
+                  <p className="font-medium">{evaluator.email}</p>
                 </div>
               </div>
             </MobileCard>
@@ -1066,13 +1682,18 @@ const AdminDashboard: React.FC = () => {
         </div>
       </div>
     </div>
-  )
+  );
 
   const renderEvaluationReports = () => (
     <div className="space-y-4 sm:space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Evaluation and Reports</h1>
-        <button className="lg:hidden p-2 rounded-lg bg-[#1B365D] text-white" onClick={() => setSidebarOpen(true)}>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+          Evaluation and Reports
+        </h1>
+        <button
+          className="lg:hidden p-2 rounded-lg bg-[#1B365D] text-white"
+          onClick={() => setSidebarOpen(true)}
+        >
           <Menu size={20} />
         </button>
       </div>
@@ -1080,18 +1701,29 @@ const AdminDashboard: React.FC = () => {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         {stats.map((stat, index) => (
-          <div key={index} className="bg-white rounded-lg p-4 sm:p-6 shadow-sm border">
+          <div
+            key={index}
+            className="bg-white rounded-lg p-4 sm:p-6 shadow-sm border"
+          >
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs sm:text-sm font-medium text-gray-600">{stat.title}</p>
-                <p className="text-lg sm:text-2xl font-bold text-gray-900">{stat.value}</p>
+                <p className="text-xs sm:text-sm font-medium text-gray-600">
+                  {stat.title}
+                </p>
+                <p className="text-lg sm:text-2xl font-bold text-gray-900">
+                  {stat.value}
+                </p>
                 <div className="flex items-center mt-2">
                   <TrendingUp size={14} className="text-green-500 mr-1" />
-                  <span className="text-xs sm:text-sm text-green-500">{stat.change}</span>
+                  <span className="text-xs sm:text-sm text-green-500">
+                    {stat.change}
+                  </span>
                 </div>
               </div>
               <div className="bg-[#1B365D] text-white p-2 sm:p-3 rounded-lg">
-                <span className="text-sm sm:text-lg font-bold">{stat.icon}</span>
+                <span className="text-sm sm:text-lg font-bold">
+                  {stat.icon}
+                </span>
               </div>
             </div>
           </div>
@@ -1101,15 +1733,252 @@ const AdminDashboard: React.FC = () => {
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         <div className="bg-white rounded-lg shadow-sm border p-4 sm:p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Schools Accreditation Summary</h3>
-          <div className="h-48 sm:h-64 bg-gray-50 rounded-lg flex items-center justify-center">
-            <p className="text-gray-500 text-sm sm:text-base">Chart visualization would go here</p>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+            Schools Accreditation Summary
+          </h3>
+          <div className="h-48 sm:h-64">
+            <svg className="w-full h-full" viewBox="0 0 400 200">
+              {/* Calculate data for the chart */}
+              {(() => {
+                const totalSchools =
+                  requestedSchools.length + accreditedSchools.length;
+                const pendingCount = requestedSchools.filter(
+                  (s) => s.status === "pending"
+                ).length;
+                const approvedCount = accreditedSchools.filter(
+                  (s) => s.status === "approved"
+                ).length;
+                const deniedCount = requestedSchools.filter(
+                  (s) => s.status === "denied" || s.status === "rejected"
+                ).length;
+
+                const maxValue = Math.max(
+                  pendingCount,
+                  approvedCount,
+                  deniedCount,
+                  1
+                );
+                const barWidth = 60;
+                const barSpacing = 40;
+                const startX = 50;
+                const chartHeight = 120;
+                const startY = 160;
+
+                return (
+                  <>
+                    {/* Bars */}
+                    <rect
+                      x={startX}
+                      y={startY - (pendingCount / maxValue) * chartHeight}
+                      width={barWidth}
+                      height={(pendingCount / maxValue) * chartHeight}
+                      fill="#F59E0B"
+                      className="hover:fill-yellow-600 transition-colors"
+                    />
+                    <rect
+                      x={startX + barWidth + barSpacing}
+                      y={startY - (approvedCount / maxValue) * chartHeight}
+                      width={barWidth}
+                      height={(approvedCount / maxValue) * chartHeight}
+                      fill="#10B981"
+                      className="hover:fill-green-600 transition-colors"
+                    />
+                    <rect
+                      x={startX + (barWidth + barSpacing) * 2}
+                      y={startY - (deniedCount / maxValue) * chartHeight}
+                      width={barWidth}
+                      height={(deniedCount / maxValue) * chartHeight}
+                      fill="#EF4444"
+                      className="hover:fill-red-600 transition-colors"
+                    />
+
+                    {/* X-axis labels */}
+                    <text
+                      x={startX + barWidth / 2}
+                      y="185"
+                      textAnchor="middle"
+                      className="text-xs fill-gray-600"
+                    >
+                      Pending ({pendingCount})
+                    </text>
+                    <text
+                      x={startX + barWidth + barSpacing + barWidth / 2}
+                      y="185"
+                      textAnchor="middle"
+                      className="text-xs fill-gray-600"
+                    >
+                      Approved ({approvedCount})
+                    </text>
+                    <text
+                      x={startX + (barWidth + barSpacing) * 2 + barWidth / 2}
+                      y="185"
+                      textAnchor="middle"
+                      className="text-xs fill-gray-600"
+                    >
+                      Denied ({deniedCount})
+                    </text>
+
+                    {/* Y-axis labels */}
+                    <text x="20" y="45" className="text-xs fill-gray-500">
+                      {maxValue}
+                    </text>
+                    <text x="20" y="85" className="text-xs fill-gray-500">
+                      {Math.round(maxValue * 0.75)}
+                    </text>
+                    <text x="20" y="125" className="text-xs fill-gray-500">
+                      {Math.round(maxValue * 0.5)}
+                    </text>
+                    <text x="20" y="165" className="text-xs fill-gray-500">
+                      0
+                    </text>
+
+                    {/* Data labels on bars */}
+                    <text
+                      x={startX + barWidth / 2}
+                      y={startY - (pendingCount / maxValue) * chartHeight - 5}
+                      textAnchor="middle"
+                      className="text-xs fill-gray-700 font-medium"
+                    >
+                      {pendingCount}
+                    </text>
+                    <text
+                      x={startX + barWidth + barSpacing + barWidth / 2}
+                      y={startY - (approvedCount / maxValue) * chartHeight - 5}
+                      textAnchor="middle"
+                      className="text-xs fill-gray-700 font-medium"
+                    >
+                      {approvedCount}
+                    </text>
+                    <text
+                      x={startX + (barWidth + barSpacing) * 2 + barWidth / 2}
+                      y={startY - (deniedCount / maxValue) * chartHeight - 5}
+                      textAnchor="middle"
+                      className="text-xs fill-gray-700 font-medium"
+                    >
+                      {deniedCount}
+                    </text>
+                  </>
+                );
+              })()}
+            </svg>
           </div>
         </div>
         <div className="bg-white rounded-lg shadow-sm border p-4 sm:p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Evaluators Trend Summary</h3>
-          <div className="h-48 sm:h-64 bg-gray-50 rounded-lg flex items-center justify-center">
-            <p className="text-gray-500 text-sm sm:text-base">Chart visualization would go here</p>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+            Evaluators Trend Summary
+          </h3>
+          <div className="h-48 sm:h-64">
+            <svg className="w-full h-full" viewBox="0 0 400 200">
+              {/* Calculate evaluator data by month */}
+              {(() => {
+                const monthlyData = Array.from({ length: 12 }, (_, i) => {
+                  const month = i + 1;
+                  const year = new Date().getFullYear();
+                  const count = evaluators.filter((evaluator) => {
+                    const evaluatorDate = new Date(evaluator.created_at);
+                    return (
+                      evaluatorDate.getMonth() === i &&
+                      evaluatorDate.getFullYear() === year
+                    );
+                  }).length;
+                  return { month, count };
+                });
+
+                const maxCount = Math.max(
+                  ...monthlyData.map((d) => d.count),
+                  1
+                );
+                const monthNames = [
+                  "Jan",
+                  "Feb",
+                  "Mar",
+                  "Apr",
+                  "May",
+                  "Jun",
+                  "Jul",
+                  "Aug",
+                  "Sep",
+                  "Oct",
+                  "Nov",
+                  "Dec",
+                ];
+                const barWidth = 20;
+                const barSpacing = 10;
+                const startX = 50;
+                const chartHeight = 120;
+                const startY = 160;
+
+                return (
+                  <>
+                    {/* Chart bars */}
+                    {monthlyData.map((data, i) => {
+                      const barHeight = (data.count / maxCount) * chartHeight;
+                      const x = startX + i * (barWidth + barSpacing);
+                      const y = startY - barHeight;
+
+                      return (
+                        <rect
+                          key={i}
+                          x={x}
+                          y={y}
+                          width={barWidth}
+                          height={barHeight}
+                          fill="#1B365D"
+                          className="hover:fill-blue-700 transition-colors"
+                        />
+                      );
+                    })}
+
+                    {/* X-axis labels */}
+                    {monthNames.map((month, i) => (
+                      <text
+                        key={month}
+                        x={startX + i * (barWidth + barSpacing) + barWidth / 2}
+                        y="185"
+                        textAnchor="middle"
+                        className="text-xs fill-gray-600"
+                      >
+                        {month}
+                      </text>
+                    ))}
+
+                    {/* Y-axis labels */}
+                    <text x="20" y="45" className="text-xs fill-gray-500">
+                      {maxCount}
+                    </text>
+                    <text x="20" y="85" className="text-xs fill-gray-500">
+                      {Math.round(maxCount * 0.75)}
+                    </text>
+                    <text x="20" y="125" className="text-xs fill-gray-500">
+                      {Math.round(maxCount * 0.5)}
+                    </text>
+                    <text x="20" y="165" className="text-xs fill-gray-500">
+                      0
+                    </text>
+
+                    {/* Data labels on bars */}
+                    {monthlyData.map((data, i) => {
+                      const barHeight = (data.count / maxCount) * chartHeight;
+                      const x =
+                        startX + i * (barWidth + barSpacing) + barWidth / 2;
+                      const y = startY - barHeight - 5;
+
+                      return (
+                        <text
+                          key={`label-${i}`}
+                          x={x}
+                          y={y}
+                          textAnchor="middle"
+                          className="text-xs fill-gray-700 font-medium"
+                        >
+                          {data.count}
+                        </text>
+                      );
+                    })}
+                  </>
+                );
+              })()}
+            </svg>
           </div>
         </div>
       </div>
@@ -1118,14 +1987,19 @@ const AdminDashboard: React.FC = () => {
       <div className="bg-white rounded-lg shadow-sm border">
         <div className="p-4 sm:p-6 border-b border-gray-200">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h2 className="text-lg font-semibold text-gray-900">Uploaded Reports (10)</h2>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Uploaded Reports (10)
+            </h2>
             <button className="bg-[#1B365D] text-white px-4 py-2 rounded-lg text-sm font-medium w-full sm:w-auto">
               Load More
             </button>
           </div>
           <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
             <div className="relative flex-1">
-              <Search size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <Search
+                size={20}
+                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+              />
               <input
                 type="text"
                 placeholder="Search Report"
@@ -1163,10 +2037,18 @@ const AdminDashboard: React.FC = () => {
             <tbody className="bg-white divide-y divide-gray-200">
               {reports.map((report) => (
                 <tr key={report.id}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{report.name}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{report.schoolLocation}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{report.evaluatorName}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{report.uploadDate}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {report.name}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {report.schoolLocation}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {report.evaluatorName}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {report.uploadDate}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
                     <button
                       onClick={() => handleDownload(report.id)}
@@ -1236,123 +2118,191 @@ const AdminDashboard: React.FC = () => {
         </div>
       </div>
     </div>
-  )
-
-  const [messageInput, setMessageInput] = useState<string>("");
-
-  const handleSendMessage = async () => {
-    if (!selectedMessage || !messageInput.trim()) return;
-    await sendMessage({ recipientId: selectedMessage.id, message: messageInput });
-    setMessageInput("");
-  };
+  );
 
   const renderMessaging = () => (
     <div className="space-y-4 sm:space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Messaging</h1>
-        <button className="lg:hidden p-2 rounded-lg bg-[#1B365D] text-white" onClick={() => setSidebarOpen(true)}>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+          Messaging
+        </h1>
+        <button
+          className="lg:hidden p-2 rounded-lg bg-[#1B365D] text-white"
+          onClick={() => setSidebarOpen(true)}
+        >
           <Menu size={20} />
         </button>
       </div>
-
+      <button
+        className="mb-4 px-4 py-2 rounded bg-[#1B365D] text-white"
+        onClick={() => setShowCompose(true)}
+      >
+        + New Message
+      </button>
+      {showCompose && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-30 z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h2 className="text-lg font-semibold mb-4">New Message</h2>
+            <label className="block mb-2">Send to:</label>
+            <select
+              className="border rounded px-2 py-1 w-full mb-4"
+              value={composeRecipientType === "user" ? "user" : composeGroup}
+              onChange={(e) => {
+                if (e.target.value === "user") {
+                  setComposeRecipientType("user");
+                  setComposeGroup("");
+                } else {
+                  setComposeRecipientType("group");
+                  setComposeGroup(e.target.value);
+                }
+              }}
+            >
+              <option value="all">All</option>
+              <option value="evaluators">Evaluators</option>
+              <option value="trainers">Trainers</option>
+              <option value="schools">Schools</option>
+              <option value="user">Custom User</option>
+            </select>
+            {composeRecipientType === "user" && (
+              <select
+                className="border rounded px-2 py-1 w-full mb-4"
+                value={composeUserId}
+                onChange={(e) => setComposeUserId(e.target.value)}
+              >
+                <option value="">Select a user</option>
+                {allUsers.map((user: any) => (
+                  <option key={user.id} value={user.id}>
+                    {user.name} ({user.role})
+                  </option>
+                ))}
+              </select>
+            )}
+            <label className="block mb-2">Message:</label>
+            <textarea
+              className="border rounded px-2 py-1 w-full mb-4"
+              rows={3}
+              value={composeMessage}
+              onChange={(e) => setComposeMessage(e.target.value)}
+            />
+            <div className="flex justify-end space-x-2">
+              <button
+                className="px-4 py-2 rounded bg-gray-200"
+                onClick={() => setShowCompose(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-2 rounded bg-[#1B365D] text-white"
+                onClick={async () => {
+                  const recipient =
+                    composeRecipientType === "user"
+                      ? composeUserId
+                      : composeGroup;
+                  await startNewConversation(
+                    composeRecipientType,
+                    recipient,
+                    composeMessage
+                  );
+                }}
+                disabled={
+                  (composeRecipientType === "user" && !composeUserId) ||
+                  (composeRecipientType === "group" && !composeGroup) ||
+                  !composeMessage
+                }
+              >
+                Send
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 h-[500px] sm:h-[600px]">
-        {/* Messages List */}
+        {/* Conversations List */}
         <div
-          className={`bg-white rounded-lg shadow-sm border ${!showMobileMessageList && selectedMessage ? "hidden lg:block" : ""}`}
+          className={`bg-white rounded-lg shadow-sm border ${
+            !showMobileMessageList && selectedConversation
+              ? "hidden lg:block"
+              : ""
+          }`}
         >
           <div className="p-4 border-b border-gray-200">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <h2 className="text-lg font-semibold text-gray-900">Messages</h2>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Conversations
+                </h2>
                 <span className="bg-[#1B365D] text-white text-xs px-2 py-1 rounded-full">
-                  {messageTabs.find((tab) => tab.id === activeMessageTab)?.count || 0}
+                  {conversations.length}
                 </span>
               </div>
-              {selectedMessage && (
-                <button className="lg:hidden p-1 rounded text-gray-500" onClick={() => setShowMobileMessageList(false)}>
+              {selectedConversation && (
+                <button
+                  className="lg:hidden p-1 rounded text-gray-500"
+                  onClick={() => setShowMobileMessageList(false)}
+                >
                   <ChevronRight size={20} />
                 </button>
               )}
             </div>
           </div>
-
-          {/* Message Tabs */}
-          <div className="border-b border-gray-200">
-            {messageTabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveMessageTab(tab.id)}
-                className={`w-full p-4 text-left hover:bg-gray-50 transition-colors ${
-                  activeMessageTab === tab.id ? "bg-[#1B365D] text-white" : "text-gray-700"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div
-                      className={`p-2 rounded-full ${
-                        activeMessageTab === tab.id ? "bg-white text-[#1B365D]" : "bg-[#1B365D] text-white"
-                      }`}
-                    >
-                      <MessageSquare size={16} />
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm sm:text-base">{tab.label}</p>
-                      <div className="flex items-center space-x-1">
-                        <div className="flex -space-x-1">
-                          {getFilteredMessages()
-                            .slice(0, 3)
-                            .map((message, index) => (
-                              <img
-                                key={index}
-                                src={message.avatar || "/placeholder.svg"}
-                                alt=""
-                                className="w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 border-white"
-                              />
-                            ))}
-                        </div>
-                        <span className="text-xs sm:text-sm">{tab.count} messages</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-          <div className="p-4 space-y-4 overflow-y-auto" style={{ maxHeight: "300px" }}>
-            {getFilteredMessages().map((message) => (
+          <div
+            className="p-4 space-y-4 overflow-y-auto"
+            style={{ maxHeight: "300px" }}
+          >
+            {conversationLoading && <div>Loading...</div>}
+            {conversationError && (
+              <div className="text-red-600">{conversationError}</div>
+            )}
+            {conversations.map((conv) => (
               <div
-                key={message.id}
+                key={conv.id}
                 onClick={() => {
-                  setSelectedMessage(message)
-                  setShowMobileMessageList(false)
+                  setSelectedConversation(conv);
+                  setShowMobileMessageList(false);
+                  fetchConversationMessages(conv.id);
                 }}
                 className={`flex items-start space-x-3 p-3 rounded-lg cursor-pointer transition-colors ${
-                  selectedMessage?.id === message.id ? "bg-blue-50 border border-blue-200" : "hover:bg-gray-50"
+                  selectedConversation?.id === conv.id
+                    ? "bg-blue-50 border border-blue-200"
+                    : "hover:bg-gray-50"
                 }`}
               >
                 <img
-                  src={message.avatar || "/placeholder.svg"}
-                  alt={message.sender}
+                  src={"/placeholder.svg"}
+                  alt={conv.name || conv.group || "Conversation"}
                   className="w-8 h-8 sm:w-10 sm:h-10 rounded-full"
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-gray-900 truncate">{message.sender}</p>
-                    <p className="text-xs text-gray-500">{message.timestamp}</p>
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {conv.group || conv.name || conv.id}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {conv.updated_at
+                        ? new Date(conv.updated_at).toLocaleString()
+                        : ""}
+                    </p>
                   </div>
-                  <p className="text-xs text-gray-500 mb-1">{message.role}</p>
-                  <p className="text-sm text-gray-600 truncate">{message.message}</p>
+                  <p className="text-xs text-gray-500 mb-1">
+                    {conv.type === "group" ? conv.group : "User"}
+                  </p>
+                  <p className="text-sm text-gray-600 truncate">
+                    {conv.last_message}
+                  </p>
                 </div>
               </div>
             ))}
           </div>
         </div>
-
         {/* Chat Area */}
         <div
-          className={`lg:col-span-2 bg-white rounded-lg shadow-sm border flex flex-col ${showMobileMessageList && selectedMessage ? "hidden lg:flex" : ""}`}
+          className={`lg:col-span-2 bg-white rounded-lg shadow-sm border flex flex-col ${
+            showMobileMessageList && selectedConversation
+              ? "hidden lg:flex"
+              : ""
+          }`}
         >
-          {selectedMessage ? (
+          {selectedConversation ? (
             <>
               <div className="p-4 border-b border-gray-200">
                 <div className="flex items-center justify-between">
@@ -1364,13 +2314,25 @@ const AdminDashboard: React.FC = () => {
                       <ChevronLeft size={20} />
                     </button>
                     <img
-                      src={selectedMessage.avatar || "/placeholder.svg"}
-                      alt={selectedMessage.sender}
+                      src={"/placeholder.svg"}
+                      alt={
+                        selectedConversation.name ||
+                        selectedConversation.group ||
+                        "Conversation"
+                      }
                       className="w-8 h-8 sm:w-10 sm:h-10 rounded-full"
                     />
                     <div>
-                      <h3 className="text-base sm:text-lg font-semibold text-gray-900">{selectedMessage.sender}</h3>
-                      <p className="text-xs sm:text-sm text-gray-500">{selectedMessage.role}</p>
+                      <h3 className="text-base sm:text-lg font-semibold text-gray-900">
+                        {selectedConversation.name ||
+                          selectedConversation.group ||
+                          selectedConversation.id}
+                      </h3>
+                      <p className="text-xs sm:text-sm text-gray-500">
+                        {selectedConversation.type === "group"
+                          ? selectedConversation.group
+                          : "User"}
+                      </p>
                     </div>
                   </div>
                   <button className="text-gray-400 hover:text-gray-600">
@@ -1379,20 +2341,53 @@ const AdminDashboard: React.FC = () => {
                 </div>
               </div>
               <div className="flex-1 p-4 space-y-4 overflow-y-auto">
-                {/* Message history UI would go here, currently only shows selected message */}
-                <div className="flex justify-start">
-                  <div className="bg-gray-100 rounded-lg p-3 max-w-xs sm:max-w-md">
-                    <p className="text-sm">{selectedMessage.message}</p>
-                    <p className="text-xs text-gray-500 mt-2">{selectedMessage.timestamp}</p>
-                  </div>
-                </div>
+                {conversationMessages.map((msg) => {
+                  const isSelf =
+                    String(msg.sender_id) ===
+                    String(localStorage.getItem("userId"));
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`flex ${
+                        isSelf ? "justify-end" : "justify-start"
+                      } mb-2`}
+                    >
+                      <div className="flex items-end">
+                        <div className="w-8 h-8 rounded-full bg-gray-400 flex items-center justify-center text-white mr-2">
+                          {msg.sender_name?.[0] || "?"}
+                        </div>
+                        <div
+                          className={`rounded-lg p-3 max-w-xs sm:max-w-md ${
+                            isSelf
+                              ? "bg-blue-500 text-white"
+                              : "bg-gray-100 text-gray-900"
+                          }`}
+                        >
+                          <p className="text-sm">{msg.message}</p>
+                          <p
+                            className={`text-xs mt-2 ${
+                              isSelf ? "text-gray-200" : "text-gray-500"
+                            }`}
+                          >
+                            {msg.sender_name} • {msg.timestamp}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
               <div className="p-4 border-t border-gray-200">
-                {messageError && (
-                  <div className="mb-2 text-sm text-red-600">{messageError}</div>
+                {conversationError && (
+                  <div className="mb-2 text-sm text-red-600">
+                    {conversationError}
+                  </div>
                 )}
                 <div className="flex items-center space-x-3">
-                  <button className="text-gray-400 hover:text-gray-600" disabled={messageLoading}>
+                  <button
+                    className="text-gray-400 hover:text-gray-600"
+                    disabled={conversationLoading}
+                  >
                     <Smile size={20} />
                   </button>
                   <input
@@ -1402,19 +2397,67 @@ const AdminDashboard: React.FC = () => {
                     value={messageInput}
                     onChange={(e) => setMessageInput(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && messageInput.trim() && !messageLoading) {
-                        handleSendMessage();
+                      if (
+                        e.key === "Enter" &&
+                        messageInput.trim() &&
+                        !conversationLoading &&
+                        selectedConversation
+                      ) {
+                        console.log(
+                          "Sending message via Enter:",
+                          messageInput,
+                          "to",
+                          selectedConversation.id
+                        );
+                        sendConversationMessage(
+                          selectedConversation.id,
+                          messageInput
+                        );
+                        setMessageInput("");
                       }
                     }}
-                    disabled={messageLoading}
+                    disabled={conversationLoading}
                   />
                   <button
                     className="bg-[#1B365D] text-white p-2 rounded-lg hover:bg-[#2563EB] transition-colors flex items-center justify-center"
-                    onClick={handleSendMessage}
-                    disabled={messageLoading || !messageInput.trim()}
+                    onClick={() => {
+                      if (selectedConversation && messageInput.trim()) {
+                        console.log(
+                          "Button send:",
+                          messageInput,
+                          "to",
+                          selectedConversation.id
+                        );
+                        sendConversationMessage(
+                          selectedConversation.id,
+                          messageInput
+                        );
+                        setMessageInput("");
+                      }
+                    }}
+                    disabled={conversationLoading || !messageInput.trim()}
                   >
-                    {messageLoading ? (
-                      <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
+                    {conversationLoading ? (
+                      <svg
+                        className="animate-spin h-5 w-5 text-white"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        ></circle>
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8v8z"
+                        ></path>
+                      </svg>
                     ) : (
                       <Send size={20} />
                     )}
@@ -1425,161 +2468,287 @@ const AdminDashboard: React.FC = () => {
           ) : (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
-                <MessageSquare size={48} className="text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-500">Select a conversation to start messaging</p>
+                <MessageSquare
+                  size={48}
+                  className="text-gray-400 mx-auto mb-4"
+                />
+                <p className="text-gray-500">
+                  Select a conversation to start messaging
+                </p>
               </div>
             </div>
           )}
         </div>
       </div>
     </div>
-  )
+  );
 
   const renderSettings = () => (
     <div className="space-y-6 sm:space-y-8">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Settings</h1>
-        <button className="lg:hidden p-2 rounded-lg bg-[#1B365D] text-white" onClick={() => setSidebarOpen(true)}>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+          Settings
+        </h1>
+        <button
+          className="lg:hidden p-2 rounded-lg bg-[#1B365D] text-white"
+          onClick={() => setSidebarOpen(true)}
+        >
           <Menu size={20} />
         </button>
       </div>
 
       {/* Personal Settings */}
       <div className="bg-white rounded-lg shadow-sm border p-4 sm:p-8">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 sm:mb-8">Personal Settings</h2>
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 sm:mb-8">
+          Personal Settings
+        </h2>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Full Names</label>
-            <input
-              type="text"
-              defaultValue="Mike David"
-              className="w-full border-0 border-b border-gray-300 px-0 py-2 focus:ring-0 focus:border-[#1B365D] bg-transparent"
-            />
+        {profileLoading && (
+          <div className="text-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#1B365D] mx-auto"></div>
+            <p className="mt-2 text-gray-600">Loading profile...</p>
           </div>
+        )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Role</label>
-            <input
-              type="text"
-              defaultValue="Admin"
-              className="w-full border-0 border-b border-gray-300 px-0 py-2 focus:ring-0 focus:border-[#1B365D] bg-transparent"
-              readOnly
-            />
+        {profileError && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-red-600">{profileError}</p>
           </div>
-        </div>
+        )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8 mt-6 sm:mt-8">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-            <input
-              type="email"
-              defaultValue="david@gmail.com"
-              className="w-full border-0 border-b border-gray-300 px-0 py-2 focus:ring-0 focus:border-[#1B365D] bg-transparent"
-            />
+        {profileSuccess && (
+          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+            <p className="text-green-600">{profileSuccess}</p>
           </div>
+        )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
-            <input
-              type="tel"
-              defaultValue="0788888888"
-              className="w-full border-0 border-b border-gray-300 px-0 py-2 focus:ring-0 focus:border-[#1B365D] bg-transparent"
-            />
-          </div>
+        {!profileLoading && profile && (
+          <>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Full Names
+                </label>
+                <input
+                  type="text"
+                  value={profileFormData.name}
+                  onChange={(e) =>
+                    setProfileFormData({
+                      ...profileFormData,
+                      name: e.target.value,
+                    })
+                  }
+                  className="w-full border-0 border-b border-gray-300 px-0 py-2 focus:ring-0 focus:border-[#1B365D] bg-transparent"
+                />
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Location</label>
-            <input
-              type="text"
-              defaultValue="Nairobi Kenya"
-              className="w-full border-0 border-b border-gray-300 px-0 py-2 focus:ring-0 focus:border-[#1B365D] bg-transparent"
-            />
-          </div>
-        </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={profileFormData.email}
+                  onChange={(e) =>
+                    setProfileFormData({
+                      ...profileFormData,
+                      email: e.target.value,
+                    })
+                  }
+                  className="w-full border-0 border-b border-gray-300 px-0 py-2 focus:ring-0 focus:border-[#1B365D] bg-transparent"
+                />
+              </div>
+            </div>
+
+            <div className="mt-8 flex justify-end">
+              <button
+                onClick={updateProfile}
+                disabled={profileLoading}
+                className="bg-[#1B365D] text-white px-6 py-2 rounded-lg hover:bg-[#2563EB] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {profileLoading ? "Updating..." : "Update Profile"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Notifications */}
       <div className="bg-white rounded-lg shadow-sm border p-4 sm:p-8">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 sm:mb-8">Notifications</h2>
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 sm:mb-8">
+          Notifications
+        </h2>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Notification email</label>
-            <input
-              type="email"
-              defaultValue="david@gmail.com"
-              className="w-full border-0 border-b border-gray-300 px-0 py-2 focus:ring-0 focus:border-[#1B365D] bg-transparent"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Sms Notification Number</label>
-            <input
-              type="tel"
-              defaultValue="0788888888"
-              className="w-full border-0 border-b border-gray-300 px-0 py-2 focus:ring-0 focus:border-[#1B365D] bg-transparent"
-            />
-          </div>
-        </div>
-
-        <div className="mt-6 sm:mt-8">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Allowed Notifications</label>
-          <div className="relative">
-            <select className="w-full lg:w-1/2 border-0 border-b border-gray-300 px-0 py-2 focus:ring-0 focus:border-[#1B365D] bg-transparent appearance-none">
-              <option>All</option>
-              <option>Email Only</option>
-              <option>SMS Only</option>
-              <option>None</option>
-            </select>
-            <ChevronDown
-              size={16}
-              className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none lg:right-1/2 lg:mr-2"
-            />
-          </div>
+        <div className="text-center py-8">
+          <p className="text-gray-500">
+            Notification settings will be available in a future update.
+          </p>
         </div>
       </div>
 
       {/* Data Backup */}
       <div className="bg-white rounded-lg shadow-sm border p-4 sm:p-8">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 sm:mb-8">Data Backup</h2>
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-6 sm:mb-8">
+          Data Backup
+        </h2>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Backup Frequency</label>
-          <div className="relative">
-            <select className="w-full lg:w-1/2 border-0 border-b border-gray-300 px-0 py-2 focus:ring-0 focus:border-[#1B365D] bg-transparent appearance-none">
-              <option>Daily</option>
-              <option>Weekly</option>
-              <option>Monthly</option>
-            </select>
-            <ChevronDown
-              size={16}
-              className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none lg:right-1/2 lg:mr-2"
-            />
-          </div>
+        <div className="text-center py-8">
+          <p className="text-gray-500">
+            Data backup settings will be available in a future update.
+          </p>
         </div>
       </div>
     </div>
-  )
+  );
 
   const renderContent = () => {
     switch (activeTab) {
       case "dashboard":
-        return renderDashboard()
+        return renderDashboard();
       case "schools":
-        return renderSchools()
+        return renderSchools();
       case "evaluators":
-        return renderEvaluators()
+        return renderEvaluators();
       case "evaluation-reports":
-        return renderEvaluationReports()
+        return renderEvaluationReports();
       case "messaging":
-        return renderMessaging()
+        return renderMessaging();
       case "settings":
-        return renderSettings()
+        return renderSettings();
       default:
-        return renderDashboard()
+        return renderDashboard();
     }
-  }
+  };
+
+  // Add this handler near the other handlers in the component:
+  const handleView = (report: Report) => {
+    setSelectedReport(report);
+    setShowReportModal(true);
+  };
+
+  // Add these handlers near the other handlers in the component:
+  const handleApproveSchool = async (schoolId: string) => {
+    console.log("[Approve] Called for schoolId:", schoolId);
+    setLoading(true);
+    setError(null);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/admin/change-status`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            type: "school",
+            id: schoolId,
+            status: "approved",
+          }),
+        }
+      );
+      console.log("[Approve] API response status:", res.status);
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("[Approve] API error:", errorText);
+        throw new Error("Failed to approve school");
+      }
+      setToastMessage("Application approved!");
+      setTimeout(() => setToastMessage(null), 3000);
+      await refreshSchools();
+    } catch (err: any) {
+      console.error("[Approve] Error:", err);
+      setError(err.message || "Error approving school");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDenySchool = async (schoolId: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/admin/change-status`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            type: "school",
+            id: schoolId,
+            status: "denied",
+          }),
+        }
+      );
+      if (!res.ok) throw new Error("Failed to deny school");
+      await refreshSchools();
+    } catch (err: any) {
+      setError(err.message || "Error denying school");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAssignEvaluator = async () => {
+    if (!selectedSchoolForAssignment || !selectedEvaluatorForAssignment) {
+      setAssignmentError("Please select both a school and an evaluator");
+      return;
+    }
+
+    setAssignmentLoading(true);
+    setAssignmentError(null);
+    setAssignmentSuccess(null);
+
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/admin/assign-evaluator`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            school_id: selectedSchoolForAssignment.id,
+            evaluator_id: selectedEvaluatorForAssignment,
+          }),
+        }
+      );
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.message || "Failed to assign evaluator");
+      }
+
+      setAssignmentSuccess("Evaluator assigned successfully!");
+      setShowAssignmentModal(false);
+      setSelectedSchoolForAssignment(null);
+      setSelectedEvaluatorForAssignment("");
+
+      // Refresh schools data to show updated assignments
+      await refreshSchools();
+      toast.success("Evaluator assigned successfully!");
+    } catch (err: any) {
+      setAssignmentError(err.message || "Error assigning evaluator");
+      toast.error("Failed to assign evaluator");
+    } finally {
+      setAssignmentLoading(false);
+    }
+  };
+
+  const openAssignmentModal = (school: any) => {
+    setSelectedSchoolForAssignment(school);
+    setSelectedEvaluatorForAssignment("");
+    setAssignmentError(null);
+    setAssignmentSuccess(null);
+    setShowAssignmentModal(true);
+  };
 
   return (
     <>
@@ -1587,7 +2756,10 @@ const AdminDashboard: React.FC = () => {
       <div className="min-h-screen bg-gray-100 flex">
         {/* Mobile Sidebar Overlay */}
         {sidebarOpen && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
         )}
 
         {/* Sidebar */}
@@ -1598,111 +2770,237 @@ const AdminDashboard: React.FC = () => {
         >
           <div className="p-6 flex items-center justify-between">
             <h1 className="text-xl font-bold">Iqs Authority</h1>
-            <button className="lg:hidden p-1 rounded text-white hover:bg-blue-700" onClick={() => setSidebarOpen(false)}>
+            <button
+              className="lg:hidden p-1 rounded text-white hover:bg-blue-700"
+              onClick={() => setSidebarOpen(false)}
+            >
               <X size={20} />
             </button>
           </div>
-        className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-[#1B365D] text-white flex flex-col transform transition-transform duration-300 ease-in-out lg:transform-none ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-        }`}
-      
-        <div className="p-6 flex items-center justify-between">
-          <h1 className="text-xl font-bold">Iqs Authority</h1>
-          <button className="lg:hidden p-1 rounded text-white hover:bg-blue-700" onClick={() => setSidebarOpen(false)}>
-            <X size={20} />
-          </button>
+
+          <nav className="flex-1 px-4 space-y-2">
+            {sidebarItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    setActiveTab(item.id);
+                    setSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left transition-colors ${
+                    activeTab === item.id
+                      ? "bg-white text-[#1B365D]"
+                      : "text-white hover:bg-blue-700"
+                  }`}
+                >
+                  <Icon size={20} />
+                  <span className="text-sm font-medium">{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
         </div>
 
-        <nav className="flex-1 px-4 space-y-2">
-          {sidebarItems.map((item) => {
-            const Icon = item.icon
-            return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setActiveTab(item.id)
-                  setSidebarOpen(false)
-                }}
-                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left transition-colors ${
-                  activeTab === item.id ? "bg-white text-[#1B365D]" : "text-white hover:bg-blue-700"
-                }`}
-              >
-                <Icon size={20} />
-                <span className="text-sm font-medium">{item.label}</span>
-              </button>
-            )
-          })}
-        </nav>
-      </div>
+        {/* Main Content */}
+        <div className="flex-1 overflow-auto">
+          <div className="p-4 sm:p-6">{renderContent()}</div>
+        </div>
 
-      {/* Main Content */}
-      <div className="flex-1 overflow-auto">
-        <div className="p-4 sm:p-6">{renderContent()}</div>
-      </div>
+        {/* Report View Modal */}
+        {showReportModal && selectedReport && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+              <div className="p-4 sm:p-6 border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900">
+                    View Report
+                  </h2>
+                  <button
+                    onClick={() => setShowReportModal(false)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X size={24} />
+                  </button>
+                </div>
+              </div>
 
-      {/* Report View Modal */}
-      {showReportModal && selectedReport && (
+              <div className="p-4 sm:p-6 space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      School Name
+                    </label>
+                    <p className="text-gray-900">{selectedReport.schoolName}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      School Location
+                    </label>
+                    <p className="text-gray-900">
+                      {selectedReport.schoolLocation}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Evaluator Name
+                    </label>
+                    <p className="text-gray-900">Mike Kingstone</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Uploaded Date
+                    </label>
+                    <p className="text-gray-900">10 January 2025</p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-3">
+                    Document
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {selectedReport.documents.map((doc, index) => (
+                      <div
+                        key={index}
+                        className="flex flex-col items-center p-4 border border-gray-200 rounded-lg"
+                      >
+                        <FileText size={48} className="text-gray-400 mb-2" />
+                        <p className="text-sm text-gray-700 text-center">
+                          {doc}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex justify-start">
+                  <button
+                    onClick={handleDownloadFromModal}
+                    className="bg-[#1B365D] text-white px-6 py-2 rounded-lg hover:bg-[#2563EB] transition-colors w-full sm:w-auto"
+                  >
+                    Download Report
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+      {toastMessage && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded shadow-lg z-50 text-lg font-semibold animate-fade-in">
+          {toastMessage}
+        </div>
+      )}
+      {notifications.length > 0 && (
+        <div className="p-4 md:p-6 space-y-4">
+          {notifications.map((notification) => (
+            <div
+              key={notification.id}
+              className="flex flex-col sm:flex-row sm:items-center justify-between py-2 border-b border-gray-100 last:border-b-0 space-y-1 sm:space-y-0"
+            >
+              <p className="text-sm text-gray-900">{notification.message}</p>
+              <span className="text-sm text-gray-500">
+                {notification.timestamp}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {showAssignmentModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="p-4 sm:p-6 border-b border-gray-200">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">View Report</h2>
-                <button onClick={() => setShowReportModal(false)} className="text-gray-400 hover:text-gray-600">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">
+                  Assign Evaluator
+                </h2>
+                <button
+                  onClick={() => setShowAssignmentModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
                   <X size={24} />
                 </button>
               </div>
             </div>
 
             <div className="p-4 sm:p-6 space-y-6">
+              {assignmentError && (
+                <div className="text-red-600 mb-4">{assignmentError}</div>
+              )}
+              {assignmentSuccess && (
+                <div className="text-green-600 mb-4">{assignmentSuccess}</div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">School Name</label>
-                  <p className="text-gray-900">{selectedReport.schoolName}</p>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    School
+                  </label>
+                  <select
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#1B365D] focus:border-transparent"
+                    value={selectedSchoolForAssignment?.id || ""}
+                    onChange={(e) => {
+                      const selectedSchool = requestedSchools.find(
+                        (school) => school.id === e.target.value
+                      );
+                      setSelectedSchoolForAssignment(selectedSchool);
+                    }}
+                  >
+                    <option value="">Select a school</option>
+                    {requestedSchools.map((school) => (
+                      <option key={school.id} value={school.id}>
+                        {school.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">School Location</label>
-                  <p className="text-gray-900">{selectedReport.schoolLocation}</p>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Evaluator
+                  </label>
+                  <select
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#1B365D] focus:border-transparent"
+                    value={selectedEvaluatorForAssignment}
+                    onChange={(e) =>
+                      setSelectedEvaluatorForAssignment(e.target.value)
+                    }
+                  >
+                    <option value="">Select an evaluator</option>
+                    {evaluators.map((evaluator) => (
+                      <option key={evaluator.id} value={evaluator.id}>
+                        {evaluator.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Evaluator Name</label>
-                  <p className="text-gray-900">Mike Kingstone</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Uploaded Date</label>
-                  <p className="text-gray-900">10 January 2025</p>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">Document</label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {selectedReport.documents.map((doc, index) => (
-                    <div key={index} className="flex flex-col items-center p-4 border border-gray-200 rounded-lg">
-                      <FileText size={48} className="text-gray-400 mb-2" />
-                      <p className="text-sm text-gray-700 text-center">{doc}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex justify-start">
+              <div className="flex justify-end space-x-2">
                 <button
-                  onClick={handleDownloadFromModal}
-                  className="bg-[#1B365D] text-white px-6 py-2 rounded-lg hover:bg-[#2563EB] transition-colors w-full sm:w-auto"
+                  className="px-4 py-2 rounded bg-gray-200"
+                  onClick={() => setShowAssignmentModal(false)}
                 >
-                  Download Report
+                  Cancel
+                </button>
+                <button
+                  className="px-4 py-2 rounded bg-[#1B365D] text-white"
+                  onClick={handleAssignEvaluator}
+                  disabled={
+                    !selectedSchoolForAssignment ||
+                    !selectedEvaluatorForAssignment
+                  }
+                >
+                  Assign
                 </button>
               </div>
             </div>
           </div>
         </div>
       )}
-    </div>
     </>
-  )
-}
+  );
+};
 
-export default AdminDashboard
+export default AdminDashboard;

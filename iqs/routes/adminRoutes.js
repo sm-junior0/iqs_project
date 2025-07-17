@@ -21,7 +21,9 @@ const {
   addEvaluator,
   addTrainer,
   getNewApplications,
-  assignTask
+  assignTask,
+  getProfile,
+  updateProfile
 } = require('../controllers/adminController');
 const { authenticate, authorize } = require('../middleware/authMiddleware');
 const router = express.Router();
@@ -51,5 +53,7 @@ router.post('/add-evaluator', addEvaluator);
 router.post('/add-trainer', addTrainer);
 router.get('/new-applications', getNewApplications);
 router.post('/assign-task', assignTask);
+router.get('/profile', getProfile);
+router.put('/profile', updateProfile);
 
 module.exports = router;

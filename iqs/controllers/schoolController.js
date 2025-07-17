@@ -62,19 +62,27 @@ exports.trackApplication = async (req, res) => {
 
 // First-time school application: collects all required info in one request (authenticated)
 exports.firstTimeApply = async (req, res) => {
+  // Debug: Log user and token info
+  console.log('firstTimeApply called');
+  console.log('req.user:', req.user);
+  console.log('req.headers.authorization:', req.headers.authorization);
   const { name, country, accreditation_type } = req.body;
   // Check for required fields
   if (!name || !country || !accreditation_type) {
+    console.log('Missing required fields:', { name, country, accreditation_type });
     return res.status(400).json({ message: 'Missing required fields' });
   }
   // Check for uploaded files
   if (!req.files || !req.files.registration_doc || !req.files.curriculum_doc) {
+    console.log('Missing files:', req.files);
     return res.status(400).json({ message: 'Both registration and curriculum documents are required.' });
   }
   const registrationDoc = req.files.registration_doc[0];
   const curriculumDoc = req.files.curriculum_doc[0];
   try {
     const school_id = req.user.id;
+    // Debug: Log school_id
+    console.log('school_id:', school_id);
     // Check if school exists in schools table
     const { rows: schoolRows } = await pool.query('SELECT * FROM schools WHERE id = $1', [school_id]);
     if (schoolRows.length === 0) {
@@ -103,7 +111,59 @@ exports.firstTimeApply = async (req, res) => {
     );
     res.status(201).json({ message: 'School application submitted', school_id, application_id });
   } catch (err) {
-    console.error(err);
+    console.error('Error in firstTimeApply:', err);
     res.status(500).json({ message: 'Failed to submit application', error: err.message });
+  }
+};
+
+// Get all applications for the logged-in school
+exports.getAllApplications = async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM applications WHERE school_id = $1 ORDER BY submitted_at DESC', [req.user.id]);
+    res.json({ applications: rows });
+  } catch (err) {
+    console.error('Error in getAllApplications:', err);
+    res.status(500).json({ message: 'Failed to fetch applications', error: err.message });
+  }
+};
+
+// Get a specific application by ID (must belong to the school)
+exports.getApplicationById = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query('SELECT * FROM applications WHERE id = $1 AND school_id = $2', [id, req.user.id]);
+    if (!rows.length) return res.status(404).json({ message: 'Application not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error in getApplicationById:', err);
+    res.status(500).json({ message: 'Failed to fetch application', error: err.message });
+  }
+};
+
+// Get all certificates for the logged-in school
+exports.getAllCertificates = async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT certificate_path FROM schools WHERE id = $1', [req.user.id]);
+    res.json({ certificates: rows.map(r => r.certificate_path).filter(Boolean) });
+  } catch (err) {
+    console.error('Error in getAllCertificates:', err);
+    res.status(500).json({ message: 'Failed to fetch certificates', error: err.message });
+  }
+};
+
+// Get all feedback for the logged-in school
+exports.getAllFeedback = async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT f.*, u.name as evaluator_name 
+      FROM feedback f 
+      LEFT JOIN users u ON f.evaluator_id = u.id 
+      WHERE f.school_id = $1 
+      ORDER BY f.created_at DESC
+    `, [req.user.id]);
+    res.json({ feedback: rows });
+  } catch (err) {
+    console.error('Error in getAllFeedback:', err);
+    res.status(500).json({ message: 'Failed to fetch feedback', error: err.message });
   }
 };

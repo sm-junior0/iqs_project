@@ -51,7 +51,6 @@ exports.deleteReport = async (req, res) => {
   res.json({ message: 'Report deleted' });
 };
 
-// Download a report by ID (only if evaluator owns it)
 // Submit feedback to a school
 exports.submitSchoolFeedback = async (req, res) => {
   try {
@@ -153,4 +152,57 @@ exports.getMyTasks = async (req, res) => {
   const evaluator_id = req.user.id;
   const { rows } = await schoolModel.getTasksByEvaluator(evaluator_id);
   res.json({ tasks: rows });
+};
+
+// Get evaluator profile
+exports.getProfile = async (req, res) => {
+  try {
+    const evaluator_id = req.user.id;
+    const { rows } = await pool.query('SELECT id, name, email, role, created_at FROM users WHERE id = $1', [evaluator_id]);
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    res.json({ profile: rows[0] });
+  } catch (error) {
+    console.error('Error getting profile:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+// Update evaluator profile
+exports.updateProfile = async (req, res) => {
+  try {
+    const evaluator_id = req.user.id;
+    const { name, email } = req.body;
+    
+    if (!name || !email) {
+      return res.status(400).json({ message: 'Name and email are required' });
+    }
+    
+    // Check if email is already taken by another user
+    const { rows: existingUsers } = await pool.query(
+      'SELECT id FROM users WHERE email = $1 AND id != $2',
+      [email, evaluator_id]
+    );
+    
+    if (existingUsers.length > 0) {
+      return res.status(409).json({ message: 'Email already in use' });
+    }
+    
+    const { rows } = await pool.query(
+      'UPDATE users SET name = $1, email = $2 WHERE id = $3 RETURNING id, name, email, role, created_at',
+      [name, email, evaluator_id]
+    );
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    res.json({ message: 'Profile updated successfully', profile: rows[0] });
+  } catch (error) {
+    console.error('Error updating profile:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
 };

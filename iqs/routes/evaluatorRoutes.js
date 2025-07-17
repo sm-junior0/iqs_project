@@ -1,6 +1,6 @@
 const express = require('express');
 const { authenticate, authorize } = require('../middleware/authMiddleware');
-const { mySchools, uploadReport, visitHistory, reportsForSchool, deleteReport, downloadReport, submitSchoolFeedback, getMyTasks } = require('../controllers/evaluatorController');
+const { mySchools, uploadReport, visitHistory, reportsForSchool, deleteReport, downloadReport, submitSchoolFeedback, getMyTasks, getProfile, updateProfile } = require('../controllers/evaluatorController');
 const upload = require('../middleware/uploadMiddleware');
 
 const router = express.Router();
@@ -15,6 +15,10 @@ router.get('/my-tasks', authenticate, authorize(['evaluator']), getMyTasks);
 router.post('/upload', authenticate, authorize(['evaluator']), upload.single('file'), require('../controllers/evaluatorController').uploadSchoolDoc);
 router.get('/download', authenticate, authorize(['evaluator']), require('../controllers/evaluatorController').downloadSchoolDocs);
 router.get('/download/:doc_id', authenticate, authorize(['evaluator']), require('../controllers/evaluatorController').downloadSchoolDocById);
+
+// Profile routes
+router.get('/profile', getProfile);
+router.put('/profile', updateProfile);
 
 // Evaluator submits feedback to a school
 router.post('/schools/:schoolId/feedback', upload.single('supportingDocument'), submitSchoolFeedback);

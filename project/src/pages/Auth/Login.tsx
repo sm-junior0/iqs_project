@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
-import Input from '../../components/ui/Input';
-import Button from '../../components/ui/Button';
+import React, { useState, useEffect } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
+import Input from "../../components/ui/Input";
+import Button from "../../components/ui/Button";
 
 interface LoginFormData {
   email: string;
@@ -11,27 +11,38 @@ interface LoginFormData {
 
 const Login: React.FC = () => {
   const [formData, setFormData] = useState<LoginFormData>({
-    email: '',
-    password: ''
+    email: "",
+    password: "",
   });
   const [errors, setErrors] = useState<Partial<LoginFormData>>({});
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  
+  const [successMessage, setSuccessMessage] = useState<string>("");
+
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    // Check for success message from password reset
+    if (location.state?.message) {
+      setSuccessMessage(location.state.message);
+      // Clear the message from location state
+      navigate(location.pathname, { replace: true });
+    }
+  }, [location.state, navigate, location.pathname]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const { name, value } = e.target;
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }));
-    
+
     // Clear error when user starts typing
     if (errors[name as keyof LoginFormData]) {
-      setErrors(prev => ({
+      setErrors((prev) => ({
         ...prev,
-        [name]: undefined
+        [name]: undefined,
       }));
     }
   };
@@ -40,51 +51,53 @@ const Login: React.FC = () => {
     const newErrors: Partial<LoginFormData> = {};
 
     if (!formData.email) {
-      newErrors.email = 'Email is required';
+      newErrors.email = "Email is required";
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Email is invalid';
+      newErrors.email = "Email is invalid";
     }
 
     if (!formData.password) {
-      newErrors.password = 'Password is required';
+      newErrors.password = "Password is required";
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
+  const handleSubmit = async (
+    e: React.FormEvent<HTMLFormElement>
+  ): Promise<void> => {
     e.preventDefault();
-    
+
     if (!validateForm()) return;
 
     setIsSubmitting(true);
     try {
       await login(formData.email, formData.password);
       // Get user from localStorage (set by AuthContext)
-      const user = JSON.parse(localStorage.getItem('user') || 'null');
+      const user = JSON.parse(localStorage.getItem("user") || "null");
       if (user && user.accountType) {
         switch (user.accountType) {
-          case 'admin':
-            navigate('/dashboard/admin');
+          case "admin":
+            navigate("/dashboard/admin");
             break;
-          case 'institution':
-            navigate('/dashboard/school');
+          case "institution":
+            navigate("/dashboard/school");
             break;
-          case 'evaluator':
-            navigate('/dashboard/evaluator');
+          case "evaluator":
+            navigate("/dashboard/evaluator");
             break;
-          case 'trainer':
-            navigate('/dashboard/trainer');
+          case "trainer":
+            navigate("/dashboard/trainer");
             break;
           default:
-            navigate('/dashboard');
+            navigate("/dashboard");
         }
       } else {
-        navigate('/dashboard');
+        navigate("/dashboard");
       }
     } catch (error) {
-      setErrors({ email: 'Invalid email or password' });
+      setErrors({ email: "Invalid email or password" });
     } finally {
       setIsSubmitting(false);
     }
@@ -101,6 +114,31 @@ const Login: React.FC = () => {
             Welcome back! Please enter your details.
           </p>
         </div>
+
+        {successMessage && (
+          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg
+                  className="h-5 w-5 text-green-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-green-800">{successMessage}</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <Input
@@ -134,7 +172,10 @@ const Login: React.FC = () => {
                 type="checkbox"
                 className="h-4 w-4 text-[#1B365D] focus:ring-[#1B365D] border-gray-300 rounded"
               />
-              <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700">
+              <label
+                htmlFor="remember-me"
+                className="ml-2 block text-sm text-gray-700"
+              >
                 Remember me
               </label>
             </div>
@@ -153,13 +194,13 @@ const Login: React.FC = () => {
             disabled={isSubmitting}
             onClick={() => {}}
           >
-            {isSubmitting ? 'Signing in...' : 'Sign in'}
+            {isSubmitting ? "Signing in..." : "Sign in"}
           </Button>
         </form>
 
         <div className="mt-6 text-center">
           <p className="text-gray-600">
-            Don't have an account?{' '}
+            Don't have an account?{" "}
             <Link
               to="/auth/register"
               className="text-[#1B365D] hover:text-[#2563EB] font-medium transition-colors duration-200"

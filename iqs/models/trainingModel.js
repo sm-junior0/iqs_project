@@ -1,9 +1,9 @@
 const pool = require('../config/db');
 
-exports.create = (trainer_id, title, session_date, report_path) =>
+exports.create = (trainer_id, title, location, joining_date, duration) =>
   pool.query(
-    'INSERT INTO trainings (trainer_id, title, session_date, report_path) VALUES ($1, $2, $3, $4) RETURNING *',
-    [trainer_id, title, session_date, report_path]
+    'INSERT INTO trainings (trainer_id, title, location, joining_date, duration) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+    [trainer_id, title, location, joining_date, duration]
   );
 
 exports.getByTrainer = (trainer_id) =>

@@ -7,17 +7,19 @@ exports.getDashboard = async (req, res) => {
     return res.status(401).json({ message: 'Unauthorized: user not found in request' });
   }
   try {
-    const [applications, docs, feedbacks, certificate] = await Promise.all([
+    const [applications, docs, feedbacks, certificate, school] = await Promise.all([
       pool.query('SELECT * FROM applications WHERE school_id = $1', [req.user.id]),
       pool.query('SELECT * FROM school_docs WHERE school_id = $1', [req.user.id]),
       pool.query('SELECT * FROM feedback WHERE school_id = $1', [req.user.id]),
       pool.query('SELECT certificate_path FROM schools WHERE id = $1', [req.user.id]),
+      pool.query('SELECT name, country FROM schools WHERE id = $1', [req.user.id]),
     ]);
     res.json({
       applications: applications.rows,
       docs: docs.rows,
       feedbacks: feedbacks.rows,
-      certificate: certificate.rows[0]?.certificate_path || null
+      certificate: certificate.rows[0]?.certificate_path || null,
+      school: school.rows[0] || null
     });
   } catch (err) {
     console.error('School dashboard error:', err);

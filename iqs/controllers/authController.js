@@ -44,7 +44,7 @@ exports.resetPasswordRequest = async (req, res) => {
 
   // Send email
   try {
-    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
+    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/auth/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
     await sendMail({
       to: email,
       subject: 'IQS Password Reset',

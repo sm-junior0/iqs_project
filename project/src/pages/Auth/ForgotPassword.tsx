@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
-import Input from '../../components/ui/Input';
-import Button from '../../components/ui/Button';
+import React, { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
+import Input from "../../components/ui/Input";
+import Button from "../../components/ui/Button";
 
 interface ForgotPasswordFormData {
   email: string;
@@ -10,27 +10,27 @@ interface ForgotPasswordFormData {
 
 const ForgotPassword: React.FC = () => {
   const [formData, setFormData] = useState<ForgotPasswordFormData>({
-    email: ''
+    email: "",
   });
   const [errors, setErrors] = useState<Partial<ForgotPasswordFormData>>({});
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isEmailSent, setIsEmailSent] = useState<boolean>(false);
-  
+
   const { forgotPassword } = useAuth();
   const navigate = useNavigate();
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const { name, value } = e.target;
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }));
-    
+
     // Clear error when user starts typing
     if (errors[name as keyof ForgotPasswordFormData]) {
-      setErrors(prev => ({
+      setErrors((prev) => ({
         ...prev,
-        [name]: undefined
+        [name]: undefined,
       }));
     }
   };
@@ -39,30 +39,39 @@ const ForgotPassword: React.FC = () => {
     const newErrors: Partial<ForgotPasswordFormData> = {};
 
     if (!formData.email) {
-      newErrors.email = 'Email is required';
+      newErrors.email = "Email is required";
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Email is invalid';
+      newErrors.email = "Email is invalid";
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
+  const handleSubmit = async (
+    e: React.FormEvent<HTMLFormElement>
+  ): Promise<void> => {
     e.preventDefault();
-    
+
     if (!validateForm()) return;
 
     setIsSubmitting(true);
     try {
       await forgotPassword(formData.email);
       setIsEmailSent(true);
-      // Navigate to verification page after a delay
+      // Show success message and redirect to login after a delay
       setTimeout(() => {
-        navigate('/auth/verify-code', { state: { email: formData.email } });
-      }, 2000);
-    } catch  {
-      setErrors({ email: 'Failed to send reset email. Please try again.' });
+        navigate("/auth/login", {
+          state: {
+            message:
+              "Password reset email sent. Please check your email and click the reset link.",
+          },
+        });
+      }, 3000);
+    } catch (error: any) {
+      setErrors({
+        email: error.message || "Failed to send reset email. Please try again.",
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -74,15 +83,29 @@ const ForgotPassword: React.FC = () => {
         <div className="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 text-center">
           <div className="mb-6">
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              <svg
+                className="w-8 h-8 text-green-600"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 13l4 4L19 7"
+                />
               </svg>
             </div>
             <h2 className="text-2xl font-bold text-gray-900 mb-2">
               Check your email
             </h2>
-            <p className="text-gray-600">
-              We've sent a verification code to {formData.email}
+            <p className="text-gray-600 mb-4">
+              We've sent a password reset link to {formData.email}
+            </p>
+            <p className="text-sm text-gray-500">
+              Click the link in the email to reset your password. You'll be
+              redirected to login shortly.
             </p>
           </div>
         </div>
@@ -114,12 +137,8 @@ const ForgotPassword: React.FC = () => {
             required
           />
 
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? 'Sending...' : 'Send Verification Link'}
+          <Button type="submit" className="w-full" disabled={isSubmitting}>
+            {isSubmitting ? "Sending..." : "Send Verification Link"}
           </Button>
         </form>
 
