@@ -22,7 +22,7 @@ exports.trackAttendance = async (req, res) => {
     'INSERT INTO attendance (session_id, report_path) VALUES ($1, $2)',
     [session_id, req.file.path]
   );
-  res.json({ message: 'Attendance report submitted' });
+  res.json({ message: 'Attendance report submitted', url: req.file.path });
 };
 
 // Upload training report
@@ -126,7 +126,12 @@ exports.downloadReport = async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT report_path FROM trainings WHERE id = $1 AND trainer_id = $2 AND report_path IS NOT NULL', [id, req.user.id]);
     if (rows.length === 0 || !rows[0].report_path) return res.status(404).json({ message: 'Report not found or not authorized' });
-    const filePath = path.resolve(rows[0].report_path);
+    const reportPath = rows[0].report_path;
+    // If the path looks like a URL, redirect
+    if (/^https?:\/\//.test(reportPath)) {
+      return res.redirect(reportPath);
+    }
+    const filePath = path.resolve(reportPath);
     if (!fs.existsSync(filePath)) return res.status(404).json({ message: 'File not found' });
     res.download(filePath);
   } catch (err) {

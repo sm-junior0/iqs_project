@@ -2,25 +2,29 @@ const pool = require('../config/db');
 const path = require('path');
 const fs = require('fs');
 
-// Upload required files
 // Upload required files for the school (stub, assumes file middleware)
 exports.uploadDocs = async (req, res) => {
   const { school_id } = req.body;
   if (!school_id || !req.files || req.files.length === 0) return res.status(400).json({ message: 'Missing school_id or files' });
-  const filePaths = [];
+  const fileUrls = [];
   for (const file of req.files) {
     await pool.query('INSERT INTO school_docs (school_id, doc_path, doc_type) VALUES ($1, $2, $3)', [school_id, file.path, 'other']);
-    filePaths.push(file.path);
+    fileUrls.push(file.path);
   }
-  res.json({ message: 'Documents uploaded', files: filePaths });
+  res.json({ message: 'Documents uploaded', files: fileUrls });
 };
 
-// Download approved certificate
-// Download approved certificate (returns path, not file stream)
+// Download approved certificate (returns Cloudinary URL if available)
 exports.downloadCertificate = async (req, res) => {
   const { rows } = await pool.query('SELECT certificate_path FROM schools WHERE id = $1', [req.user.id]);
   if (!rows[0] || !rows[0].certificate_path) return res.status(404).json({ message: 'Certificate not found' });
-  const filePath = path.resolve(rows[0].certificate_path);
+  const certPath = rows[0].certificate_path;
+  // If the path looks like a URL, redirect
+  if (/^https?:\/\//.test(certPath)) {
+    return res.redirect(certPath);
+  }
+  // Fallback to local file (legacy)
+  const filePath = path.resolve(certPath);
   if (!fs.existsSync(filePath)) return res.status(404).json({ message: 'Certificate file not found on server' });
   res.download(filePath, (err) => {
     if (err) {
@@ -104,7 +108,7 @@ exports.firstTimeApply = async (req, res) => {
       [school_id, accreditation_type]
     );
     const application_id = appResult.rows[0].id;
-    // Save registration and curriculum documents
+    // Save registration and curriculum documents (Cloudinary URLs)
     await pool.query(
       'INSERT INTO school_docs (school_id, doc_path, doc_type) VALUES ($1, $2, $3), ($1, $4, $5)',
       [school_id, registrationDoc.path, 'registration', curriculumDoc.path, 'curriculum']

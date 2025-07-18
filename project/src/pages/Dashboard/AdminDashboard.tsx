@@ -3009,18 +3009,20 @@ const AdminDashboard: React.FC = () => {
                     className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#1B365D] focus:border-transparent"
                     value={selectedSchoolForAssignment?.id || ""}
                     onChange={(e) => {
-                      const selectedSchool = requestedSchools.find(
-                        (school) => school.id === e.target.value
-                      );
+                      const selectedSchool = requestedSchools
+                        .filter((s) => !s.evaluator_id)
+                        .find((school) => school.id === e.target.value);
                       setSelectedSchoolForAssignment(selectedSchool);
                     }}
                   >
                     <option value="">Select a school</option>
-                    {requestedSchools.map((school) => (
-                      <option key={school.id} value={school.id}>
-                        {school.name}
-                      </option>
-                    ))}
+                    {requestedSchools
+                      .filter((s) => !s.evaluator_id)
+                      .map((school) => (
+                        <option key={school.id} value={school.id}>
+                          {school.name}
+                        </option>
+                      ))}
                   </select>
                 </div>
                 <div>
@@ -3055,10 +3057,11 @@ const AdminDashboard: React.FC = () => {
                   onClick={handleAssignEvaluator}
                   disabled={
                     !selectedSchoolForAssignment ||
-                    !selectedEvaluatorForAssignment
+                    !selectedEvaluatorForAssignment ||
+                    assignmentLoading
                   }
                 >
-                  Assign
+                  {assignmentLoading ? "Assigning..." : "Assign"}
                 </button>
               </div>
             </div>

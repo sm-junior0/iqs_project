@@ -1,14 +1,23 @@
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
+const cloudinary = require('cloudinary').v2;
+require('dotenv').config();
+
+// Configure Cloudinary (if not already configured elsewhere)
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 /**
- * Generates a PDF certificate for a school and saves it to the uploads folder.
+ * Generates a PDF certificate for a school, saves it locally, and uploads to Cloudinary.
  * @param {string} schoolName - The name of the school.
  * @param {string} approvedDate - The approval date (string).
- * @returns {string} The file path of the generated certificate.
+ * @returns {Promise<string>} The Cloudinary URL of the generated certificate.
  */
-function generateCertificate(schoolName, approvedDate) {
+async function generateCertificate(schoolName, approvedDate) {
   const uploadsDir = path.join(__dirname, '../uploads');
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir);
@@ -34,8 +43,21 @@ function generateCertificate(schoolName, approvedDate) {
 
   doc.end();
 
+  // Wait for the file to finish writing, then upload to Cloudinary
   return new Promise((resolve, reject) => {
-    stream.on('finish', () => resolve(filePath));
+    stream.on('finish', async () => {
+      try {
+        const result = await cloudinary.uploader.upload(filePath, {
+          resource_type: 'raw',
+          folder: 'iqs_certificates',
+          public_id: path.parse(fileName).name,
+          format: 'pdf',
+        });
+        resolve(result.secure_url);
+      } catch (err) {
+        reject(err);
+      }
+    });
     stream.on('error', reject);
   });
 }

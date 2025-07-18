@@ -1,5 +1,5 @@
 const pool = require('../config/db');
-const path = require('path');
+// const path = require('path'); // No longer needed for Cloudinary
 
 exports.uploadFile = async (req, res) => {
   if (!req.file) {
@@ -7,14 +7,15 @@ exports.uploadFile = async (req, res) => {
   }
 
   const { type, related_id } = req.body;
-  const { filename, path: filepath } = req.file;
+  // Cloudinary multer-storage exposes req.file.path as the URL
+  const fileUrl = req.file.path || req.file.url;
 
   await pool.query(
     'INSERT INTO files (uploader_id, type, path, related_id) VALUES ($1, $2, $3, $4)',
-    [req.user.id, type, filepath, related_id || null]
+    [req.user.id, type, fileUrl, related_id || null]
   );
 
-  res.json({ message: 'File uploaded', filename });
+  res.json({ message: 'File uploaded', url: fileUrl });
 };
 
 exports.downloadFile = async (req, res) => {
@@ -24,5 +25,6 @@ exports.downloadFile = async (req, res) => {
 
   if (!file) return res.status(404).json({ message: 'File not found' });
 
-  res.download(path.resolve(file.path));
+  // Instead of downloading, redirect to Cloudinary URL
+  return res.redirect(file.path);
 };

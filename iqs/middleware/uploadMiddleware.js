@@ -1,21 +1,23 @@
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const cloudinary = require('cloudinary').v2;
+require('dotenv').config();
 
-// Ensure uploads directory exists
-const uploadDir = './uploads';
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
-}
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: "dxbq9zjeh",
+  api_key:"437796137469585",
+  api_secret: "Dxqe3VuoB_Z8hhN1iZ8HUMRjCcI",
+});
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    resource_type: 'raw', 
+    folder: 'iqs_uploads', // Change folder name as needed
+    format: async (req, file) => 'pdf', // or use file.mimetype.split('/')[1] for dynamic
+    public_id: (req, file) => `${Date.now()}-${Math.round(Math.random() * 1e9)}`,
   },
-  filename: (req, file, cb) => {
-    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`;
-    cb(null, uniqueName);
-  }
 });
 
 const upload = multer({

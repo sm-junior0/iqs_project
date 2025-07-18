@@ -103,9 +103,15 @@ const TrainerDashboard: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
 
   const navigate = useNavigate();
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      navigate("/auth/login", { replace: true });
+    }
+  }, [navigate]);
   const handleSignOut = () => {
     localStorage.removeItem("token");
-    navigate("/auth/login");
+    navigate("/auth/login", { replace: true });
   };
 
   // Filtered sessions for search
@@ -1187,7 +1193,7 @@ const TrainerDashboard: React.FC = () => {
                         View
                       </button>
                       <button
-                        onClick={() => handleDelete(record.id)}
+                        onClick={() => handleDeleteAttendance(record.id)}
                         className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-colors"
                       >
                         Delete
@@ -1212,7 +1218,9 @@ const TrainerDashboard: React.FC = () => {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium text-gray-600">Total Reports</p>
-            <p className="text-2xl font-bold text-gray-900">{attendanceLoading ? '...' : attendanceRecords.length}</p>
+            <p className="text-2xl font-bold text-gray-900">
+              {attendanceLoading ? "..." : attendanceRecords.length}
+            </p>
             <div className="flex items-center mt-2">
               <TrendingUp size={16} className="text-green-500 mr-1" />
               <span className="text-sm text-green-500">15%</span>
@@ -1554,7 +1562,7 @@ const TrainerDashboard: React.FC = () => {
                         </button>
                         <button
                           className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 text-xs"
-                          onClick={() => handleDelete(record.id)}
+                          onClick={() => handleDeleteAttendance(record.id)}
                         >
                           Delete
                         </button>
@@ -1763,6 +1771,63 @@ const TrainerDashboard: React.FC = () => {
     null
   );
   const [viewAttendanceModalOpen, setViewAttendanceModalOpen] = useState(false);
+
+  const [deleteAttendanceId, setDeleteAttendanceId] = useState<string | null>(
+    null
+  );
+  const [showDeleteAttendanceModal, setShowDeleteAttendanceModal] =
+    useState(false);
+
+  // Replace handleDelete for attendance
+  const handleDeleteAttendance = (id: string) => {
+    setDeleteAttendanceId(id);
+    setShowDeleteAttendanceModal(true);
+  };
+
+  const confirmDeleteAttendance = async () => {
+    if (!deleteAttendanceId) return;
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${
+          import.meta.env.VITE_API_URL
+        }/api/trainer/attendance/${deleteAttendanceId}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!res.ok) throw new Error("Failed to delete attendance record");
+      // Refresh attendance list
+      const fetchAttendance = async () => {
+        setAttendanceLoading(true);
+        setAttendanceError(null);
+        try {
+          const token = localStorage.getItem("token");
+          const res = await fetch(
+            `${import.meta.env.VITE_API_URL}/api/trainer/attendance`,
+            {
+              headers: { Authorization: `Bearer ${token}` },
+            }
+          );
+          if (!res.ok) throw new Error("Failed to fetch attendance records");
+          const data = await res.json();
+          setAttendanceRecords(data.attendance || []);
+        } catch (err: any) {
+          setAttendanceError(err.message || "Error loading attendance records");
+        } finally {
+          setAttendanceLoading(false);
+        }
+      };
+      await fetchAttendance();
+      setShowDeleteAttendanceModal(false);
+      setDeleteAttendanceId(null);
+    } catch (err: any) {
+      alert(err.message || "Error deleting attendance record");
+      setShowDeleteAttendanceModal(false);
+      setDeleteAttendanceId(null);
+    }
+  };
 
   // Responsive sidebar and main layout
   return (
@@ -2173,6 +2238,33 @@ const TrainerDashboard: React.FC = () => {
                     : "No file"}
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {showDeleteAttendanceModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+          <div className="bg-white rounded-lg p-6 shadow-lg w-full max-w-sm">
+            <h2 className="text-lg font-semibold mb-4">Confirm Deletion</h2>
+            <p className="mb-6">
+              Are you sure you want to delete this attendance record?
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+                onClick={() => {
+                  setShowDeleteAttendanceModal(false);
+                  setDeleteAttendanceId(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                onClick={confirmDeleteAttendance}
+              >
+                Delete
+              </button>
             </div>
           </div>
         </div>

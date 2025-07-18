@@ -26,7 +26,7 @@ exports.uploadReport = async (req, res) => {
     'INSERT INTO evaluations (school_id, evaluator_id, report_path, visit_date) VALUES ($1, $2, $3, $4)',
     [school_id, evaluator_id, req.file.path, visit_date]
   );
-  res.json({ message: 'Report uploaded' });
+  res.json({ message: 'Report uploaded', url: req.file.path });
 };
 
 // View past visits
@@ -84,6 +84,10 @@ exports.downloadReport = async (req, res) => {
   const { rows } = await pool.query('SELECT * FROM evaluations WHERE id = $1 AND evaluator_id = $2', [id, req.user.id]);
   const report = rows[0];
   if (!report || !report.report_path) return res.status(404).json({ message: 'Report not found or not authorized' });
+  // If the path looks like a URL, redirect
+  if (/^https?:\/\//.test(report.report_path)) {
+    return res.redirect(report.report_path);
+  }
   res.download(path.resolve(report.report_path));
 };
 
@@ -104,7 +108,7 @@ exports.uploadSchoolDoc = async (req, res) => {
     'INSERT INTO school_docs (school_id, doc_path, doc_type) VALUES ($1, $2, $3)',
     [school_id, req.file.path, req.body.doc_type || 'other']
   );
-  res.json({ message: 'Document uploaded' });
+  res.json({ message: 'Document uploaded', url: req.file.path });
 };
 
 // Download all documents for assigned schools
@@ -135,6 +139,10 @@ exports.downloadSchoolDocById = async (req, res) => {
   const { rows: schoolRows } = await pool.query('SELECT * FROM schools WHERE id = $1 AND evaluator_id = $2', [doc.school_id, evaluator_id]);
   if (schoolRows.length === 0) {
     return res.status(403).json({ message: 'You are not assigned to this school' });
+  }
+  // If the path looks like a URL, redirect
+  if (/^https?:\/\//.test(doc.doc_path)) {
+    return res.redirect(doc.doc_path);
   }
   const filePath = path.resolve(doc.doc_path);
   if (!fs.existsSync(filePath)) {

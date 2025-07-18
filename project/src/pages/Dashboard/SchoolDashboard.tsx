@@ -3,6 +3,7 @@
 import type React from "react";
 import { useState, useEffect, useRef } from "react";
 import DashboardNavbar from "../../components/DashboardNavbar";
+import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Bell,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 import JSZip from "jszip";
 import { io } from "socket.io-client";
+import { useAuth } from "../../context/AuthContext";
 
 interface Application {
   id: string;
@@ -57,6 +59,17 @@ const SchoolDashboard: React.FC = () => {
   const [applicationsError, setApplicationsError] = useState<string | null>(
     null
   );
+  const navigate = useNavigate();
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      navigate("/auth/login", { replace: true });
+    }
+  }, [navigate]);
+  const handleSignOut = () => {
+    localStorage.removeItem("token");
+    navigate("/auth/login", { replace: true });
+  };
 
   const [dashboardStats, setDashboardStats] = useState<any>(null);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -793,13 +806,27 @@ const SchoolDashboard: React.FC = () => {
   const renderSettings = () => (
     <div className="space-y-8">
       <h1 className="text-xl md:text-2xl font-bold text-gray-900">Settings</h1>
-
       {/* Personal Settings */}
       <div className="bg-white rounded-lg shadow-sm border p-4 md:p-8">
-        <h2 className="text-xl font-semibold text-gray-900 mb-8">
-          Personal Settings
-        </h2>
-
+        <div className="flex items-center justify-between mb-8">
+          <h2 className="text-xl font-semibold text-gray-900">
+            Personal Settings
+          </h2>
+          {!editProfile ? (
+            <button
+              className="text-blue-600 hover:underline text-sm"
+              onClick={() => setEditProfile(true)}
+            >
+              Edit
+            </button>
+          ) : null}
+        </div>
+        {profileSuccess && (
+          <div className="mb-4 text-green-600 text-sm">{profileSuccess}</div>
+        )}
+        {profileError && (
+          <div className="mb-4 text-red-600 text-sm">{profileError}</div>
+        )}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -807,137 +834,55 @@ const SchoolDashboard: React.FC = () => {
             </label>
             <input
               type="text"
-              defaultValue="Mike David"
+              name="fullName"
+              value={profileValues.fullName}
+              onChange={handleProfileChange}
               className="w-full border-0 border-b border-gray-300 px-0 py-2 focus:ring-0 focus:border-[#1B365D] bg-transparent"
+              readOnly={!editProfile}
             />
           </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Role
-            </label>
-            <input
-              type="text"
-              defaultValue="School Administrator"
-              className="w-full border-0 border-b border-gray-300 px-0 py-2 focus:ring-0 focus:border-[#1B365D] bg-transparent"
-              readOnly
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Email
             </label>
             <input
               type="email"
-              defaultValue="david@gmail.com"
+              name="email"
+              value={profileValues.email}
+              onChange={handleProfileChange}
               className="w-full border-0 border-b border-gray-300 px-0 py-2 focus:ring-0 focus:border-[#1B365D] bg-transparent"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Phone Number
-            </label>
-            <input
-              type="tel"
-              defaultValue="0788888888"
-              className="w-full border-0 border-b border-gray-300 px-0 py-2 focus:ring-0 focus:border-[#1B365D] bg-transparent"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Location
-            </label>
-            <input
-              type="text"
-              defaultValue="Nairobi Kenya"
-              className="w-full border-0 border-b border-gray-300 px-0 py-2 focus:ring-0 focus:border-[#1B365D] bg-transparent"
+              readOnly={!editProfile}
             />
           </div>
         </div>
-      </div>
-
-      {/* Notifications */}
-      <div className="bg-white rounded-lg shadow-sm border p-4 md:p-8">
-        <h2 className="text-xl font-semibold text-gray-900 mb-8">
-          Notifications
-        </h2>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Notification email
-            </label>
-            <input
-              type="email"
-              defaultValue="david@gmail.com"
-              className="w-full border-0 border-b border-gray-300 px-0 py-2 focus:ring-0 focus:border-[#1B365D] bg-transparent"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Sms Notification Number
-            </label>
-            <input
-              type="tel"
-              defaultValue="0788888888"
-              className="w-full border-0 border-b border-gray-300 px-0 py-2 focus:ring-0 focus:border-[#1B365D] bg-transparent"
-            />
-          </div>
-        </div>
-
-        <div className="mt-8">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Allowed Notifications
-          </label>
-          <div className="relative">
-            <select
-              title="Select"
-              className="w-full lg:w-1/2 border-0 border-b border-gray-300 px-0 py-2 focus:ring-0 focus:border-[#1B365D] bg-transparent appearance-none"
+        {editProfile && (
+          <div className="flex gap-4 mt-8">
+            <button
+              className="bg-[#1B365D] text-white px-6 py-2 rounded-lg hover:bg-[#2563EB] transition-colors disabled:opacity-50"
+              onClick={handleSaveProfile}
+              disabled={profileLoading}
             >
-              <option>All</option>
-              <option>Email Only</option>
-              <option>SMS Only</option>
-              <option>None</option>
-            </select>
-            <ChevronDown
-              size={16}
-              className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none lg:right-1/2 lg:mr-2"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Data Backup */}
-      <div className="bg-white rounded-lg shadow-sm border p-4 md:p-8">
-        <h2 className="text-xl font-semibold text-gray-900 mb-8">
-          Data Backup
-        </h2>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Backup Frequency
-          </label>
-          <div className="relative">
-            <select
-              title="Backup Frequency"
-              className="w-full lg:w-1/2 border-0 border-b border-gray-300 px-0 py-2 focus:ring-0 focus:border-[#1B365D] bg-transparent appearance-none"
+              {profileLoading ? "Saving..." : "Save"}
+            </button>
+            <button
+              className="bg-gray-300 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-400 transition-colors"
+              onClick={() => {
+                setEditProfile(false);
+                setProfileValues({
+                  fullName: user?.fullName || "",
+                  email: user?.email || "",
+                  phoneNumber: "",
+                  location: "",
+                });
+                setProfileError(null);
+                setProfileSuccess(null);
+              }}
+              disabled={profileLoading}
             >
-              <option>Daily</option>
-              <option>Weekly</option>
-              <option>Monthly</option>
-            </select>
-            <ChevronDown
-              size={16}
-              className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none lg:right-1/2 lg:mr-2"
-            />
+              Cancel
+            </button>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -1031,9 +976,51 @@ const SchoolDashboard: React.FC = () => {
     window.URL.revokeObjectURL(url);
   };
 
+  const { user, isLoading: authLoading } = useAuth();
+  const [editProfile, setEditProfile] = useState(false);
+  const [profileValues, setProfileValues] = useState({
+    fullName: user?.fullName || "",
+    email: user?.email || "",
+    phoneNumber: "",
+    location: "",
+  });
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setProfileValues((prev) => ({
+      ...prev,
+      fullName: user?.fullName || "",
+      email: user?.email || "",
+      phoneNumber: "",
+    }));
+  }, [user]);
+
+  const handleProfileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setProfileValues((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSaveProfile = async () => {
+    setProfileLoading(true);
+    setProfileSuccess(null);
+    setProfileError(null);
+    try {
+      // Placeholder for API call
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      setProfileSuccess("Profile updated successfully!");
+      setEditProfile(false);
+    } catch (err: any) {
+      setProfileError(err.message || "Failed to update profile");
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
   return (
     <>
-      <DashboardNavbar />
+      {/* <DashboardNavbar /> */}
       <div className="flex min-h-screen bg-gray-100">
         {/* Mobile Sidebar Overlay */}
         {sidebarOpen && (
@@ -1084,7 +1071,19 @@ const SchoolDashboard: React.FC = () => {
         </div>
 
         {/* Main Content */}
+        
         <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 bg-white">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+            School Dashboard
+          </h1>
+          <button
+            onClick={handleSignOut}
+            className="px-4 py-2 rounded bg-red-500 text-white font-semibold hover:bg-red-600 transition"
+          >
+            Sign Out
+          </button>
+        </div>
           {/* Mobile Header */}
           <div className="md:hidden bg-white shadow-sm border-b px-4 py-3 flex items-center justify-between">
             <button
