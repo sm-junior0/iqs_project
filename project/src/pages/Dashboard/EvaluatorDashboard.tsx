@@ -15,8 +15,12 @@ import {
   FileIcon,
   Upload,
   Menu,
+  MessageSquare,
+  Bell,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { io, Socket } from "socket.io-client";
+import ChatMessages from "../../components/ChatMessages";
 
 interface StatCard {
   title: string;
@@ -49,6 +53,16 @@ interface HistoryItem {
   id: string;
   action: string;
   timestamp: string;
+}
+
+interface Notification {
+  id: string;
+  message: string;
+  timestamp: string;
+  type: "info" | "success" | "warning" | "error";
+  category: "assignment" | "report" | "feedback" | "task" | "general";
+  read: boolean;
+  data?: any;
 }
 
 const EvaluatorDashboard: React.FC = () => {
@@ -110,6 +124,30 @@ const EvaluatorDashboard: React.FC = () => {
   const [profileUpdateSuccess, setProfileUpdateSuccess] = useState<
     string | null
   >(null);
+
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [newMessages, setNewMessages] = useState<any[]>([]); // Store new real-time messages
+  const [messages, setMessages] = useState<any[]>([]); // Store historical messages
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [messagesError, setMessagesError] = useState<string | null>(null);
+  const [messageInput, setMessageInput] = useState(""); // New: message input state
+  const [sendLoading, setSendLoading] = useState(false); // New: sending state
+  const [sendError, setSendError] = useState<string | null>(null); // New: send error
+
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [selectedConversation, setSelectedConversation] = useState<any | null>(
+    null
+  );
+  const [unreadConversations, setUnreadConversations] = useState<Set<string>>(
+    new Set()
+  );
+
+  // Notification state
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationsError, setNotificationsError] = useState<string | null>(
+    null
+  );
 
   const navigate = useNavigate();
 
@@ -216,10 +254,270 @@ const EvaluatorDashboard: React.FC = () => {
     }
   }, [assignedSchools]);
 
+  // Real-time messaging setup
+  useEffect(() => {
+    if (profile.id) {
+      const s = io(import.meta.env.VITE_API_URL || "http://localhost:5000");
+      s.emit("register", profile.id);
+      s.on("receive-message", (data: any) => {
+        // Show notification (replace alert with toast/snackbar in production)
+        alert(`New message from ${data.from}: ${data.message}`);
+        setNewMessages((prev) => [...prev, data]);
+      });
+      setSocket(s);
+      return () => {
+        s.disconnect();
+      };
+    }
+  }, [profile.id]);
+
+  // Fetch historical messages (inbox)
+  useEffect(() => {
+    const fetchMessages = async () => {
+      setMessagesLoading(true);
+      setMessagesError(null);
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(
+          `${import.meta.env.VITE_API_URL}/api/messages/inbox`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        if (!res.ok) throw new Error("Failed to fetch messages");
+        const data = await res.json();
+        setMessages(data.inbox || []);
+      } catch (err: any) {
+        setMessagesError(err.message || "Error fetching messages");
+      } finally {
+        setMessagesLoading(false);
+      }
+    };
+    if (profile.id) fetchMessages();
+  }, [profile.id]);
+
+  // Fetch conversations (groups and direct)
+  useEffect(() => {
+    const fetchConversations = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(
+          `${import.meta.env.VITE_API_URL}/api/messages/inbox`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        if (!res.ok) throw new Error("Failed to fetch conversations");
+        const data = await res.json();
+        setConversations(data.inbox || []);
+        // Default to first conversation
+        if (!selectedConversation && data.inbox && data.inbox.length > 0) {
+          setSelectedConversation(data.inbox[0]);
+        }
+      } catch (err) {
+        // handle error
+      }
+    };
+    fetchConversations();
+  }, [profile.id]);
+
   const handleSignOut = () => {
     localStorage.clear();
     navigate("/login");
   };
+
+  // Handle new messages for conversation reordering and unread status
+  const handleNewMessage = (data: any) => {
+    // Move conversation to top and mark as unread
+    setConversations((prevConversations) => {
+      const updatedConversations = [...prevConversations];
+      const conversationIndex = updatedConversations.findIndex(
+        (conv) =>
+          conv.conversation_id?.toString() ===
+            data.conversationId?.toString() ||
+          conv.id?.toString() === data.conversationId?.toString()
+      );
+
+      if (conversationIndex !== -1) {
+        // Remove conversation from current position
+        const [conversation] = updatedConversations.splice(
+          conversationIndex,
+          1
+        );
+
+        // Update conversation with new message and timestamp
+        const updatedConversation = {
+          ...conversation,
+          updated_at: new Date().toISOString(),
+          last_message: data.message,
+        };
+
+        // Add to top of list
+        updatedConversations.unshift(updatedConversation);
+      }
+
+      return updatedConversations;
+    });
+
+    // Mark conversation as unread if not currently selected
+    if (
+      !selectedConversation ||
+      (selectedConversation.conversation_id?.toString() !==
+        data.conversationId?.toString() &&
+        selectedConversation.id?.toString() !== data.conversationId?.toString())
+    ) {
+      setUnreadConversations((prev) =>
+        new Set(prev).add(data.conversationId?.toString())
+      );
+    }
+  };
+
+  // Fetch notifications from backend
+  const fetchNotifications = async () => {
+    setNotificationsLoading(true);
+    setNotificationsError(null);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/evaluator/notifications`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!res.ok) throw new Error("Failed to fetch notifications");
+      const data = await res.json();
+      setNotifications(data.notifications || []);
+    } catch (err: any) {
+      setNotificationsError(err.message || "Error fetching notifications");
+      // If notifications endpoint doesn't exist, create notifications from available data
+      createNotificationsFromData();
+    } finally {
+      setNotificationsLoading(false);
+    }
+  };
+
+  // Create notifications from available data (assigned schools, reports, etc.)
+  const createNotificationsFromData = () => {
+    const generatedNotifications: Notification[] = [];
+
+    // Create notifications from assigned schools
+    assignedSchools.forEach((school) => {
+      if (school.status === "pending") {
+        generatedNotifications.push({
+          id: `school-assigned-${school.id}`,
+          message: `🏫 New school assigned: ${school.name} in ${school.country}`,
+          timestamp: school.created_at,
+          type: "success",
+          category: "assignment",
+          read: false,
+          data: { schoolId: school.id, schoolName: school.name },
+        });
+      }
+    });
+
+    // Create notifications from reports
+    reports.forEach((report) => {
+      generatedNotifications.push({
+        id: `report-uploaded-${report.id}`,
+        message: `📄 Report uploaded for ${report.school_name || "School"}`,
+        timestamp: report.created_at,
+        type: "info",
+        category: "report",
+        read: false,
+        data: { reportId: report.id, schoolName: report.school_name },
+      });
+    });
+
+    // Add some sample notifications for demonstration
+    if (generatedNotifications.length === 0) {
+      generatedNotifications.push(
+        {
+          id: "welcome-1",
+          message:
+            "👋 Welcome to IQS Authority! Your evaluator dashboard is ready.",
+          timestamp: new Date().toISOString(),
+          type: "info",
+          category: "general",
+          read: false,
+        },
+        {
+          id: "task-assigned-1",
+          message:
+            "📋 New evaluation task assigned: Review Kingstone School documents",
+          timestamp: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
+          type: "warning",
+          category: "task",
+          read: false,
+          data: { taskId: 1, schoolName: "Kingstone School" },
+        },
+        {
+          id: "feedback-received-1",
+          message: "💬 Feedback received from admin on your latest report",
+          timestamp: new Date(Date.now() - 172800000).toISOString(), // 2 days ago
+          type: "info",
+          category: "feedback",
+          read: false,
+        }
+      );
+    }
+
+    setNotifications(generatedNotifications);
+  };
+
+  // Mark notification as read
+  const markNotificationAsRead = (notificationId: string) => {
+    setNotifications((prev) =>
+      prev.map((notification) =>
+        notification.id === notificationId
+          ? { ...notification, read: true }
+          : notification
+      )
+    );
+  };
+
+  // Mark all notifications as read
+  const markAllNotificationsAsRead = () => {
+    setNotifications((prev) =>
+      prev.map((notification) => ({ ...notification, read: true }))
+    );
+  };
+
+  // Get notification icon based on type
+  const getNotificationIcon = (type: string) => {
+    switch (type) {
+      case "success":
+        return "✅";
+      case "error":
+        return "❌";
+      case "warning":
+        return "⚠️";
+      case "info":
+      default:
+        return "ℹ️";
+    }
+  };
+
+  // Get notification color based on type
+  const getNotificationColor = (type: string) => {
+    switch (type) {
+      case "success":
+        return "border-green-200 bg-green-50";
+      case "error":
+        return "border-red-200 bg-red-50";
+      case "warning":
+        return "border-yellow-200 bg-yellow-50";
+      case "info":
+      default:
+        return "border-blue-200 bg-blue-50";
+    }
+  };
+
+  // Fetch notifications when component mounts
+  useEffect(() => {
+    fetchNotifications();
+  }, [assignedSchools, reports]); // Re-run when assigned schools or reports change
 
   const stats: StatCard[] = [
     {
@@ -248,7 +546,8 @@ const EvaluatorDashboard: React.FC = () => {
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "schools", label: "Schools", icon: School },
     { id: "reports", label: "Reports", icon: FileText },
-    { id: "history", label: "History", icon: History },
+    { id: "messages", label: "Messages", icon: MessageSquare },
+    { id: "notifications", label: "Notifications", icon: Bell },
     { id: "settings", label: "Settings", icon: Settings },
   ];
 
@@ -634,6 +933,52 @@ const EvaluatorDashboard: React.FC = () => {
     } catch (err: any) {
       console.error("Error downloading report:", err);
       alert(err.message || "Failed to download report");
+    }
+  };
+
+  // Helper: check if message is sent by evaluator (current user)
+  const isSentByMe = (msg: any) => msg.sender_id === profile.id;
+
+  // Send message to admin
+  const handleSendMessage = async () => {
+    if (!messageInput.trim()) return;
+    setSendLoading(true);
+    setSendError(null);
+    try {
+      const token = localStorage.getItem("token");
+      // Assume admin has id 'admin' or get from env/config if needed
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/messages/send`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            recipient_id: "admin", // Adjust if admin id is different
+            message: messageInput,
+          }),
+        }
+      );
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.message || "Failed to send message");
+      }
+      // Optimistically add message to chat
+      setMessages((prev) => [
+        ...prev,
+        {
+          sender_id: profile.id,
+          message: messageInput,
+          created_at: new Date().toISOString(),
+        },
+      ]);
+      setMessageInput("");
+    } catch (err: any) {
+      setSendError(err.message || "Error sending message");
+    } finally {
+      setSendLoading(false);
     }
   };
 
@@ -1407,44 +1752,189 @@ const EvaluatorDashboard: React.FC = () => {
     </div>
   );
 
-  const renderHistory = () => (
-    <div className="space-y-4 md:space-y-6">
-      <h1 className="text-xl md:text-2xl font-bold text-gray-900">History</h1>
+  const renderNotifications = () => (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl md:text-2xl font-bold text-gray-900">
+          Notifications
+        </h1>
+        {notifications.length > 0 && (
+          <button
+            onClick={markAllNotificationsAsRead}
+            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+          >
+            Mark all as read
+          </button>
+        )}
+      </div>
 
-      <div className="bg-white rounded-lg shadow-sm border">
-        <div className="p-4 md:p-6 border-b border-gray-200">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center space-y-2 sm:space-y-0 sm:space-x-4">
-            <div className="relative flex-1 max-w-full sm:max-w-md">
-              <Search
-                size={20}
-                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
-              />
-              <input
-                type="text"
-                placeholder="Search Recent action"
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1B365D] focus:border-transparent text-sm"
-              />
+      {/* Notification Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <span className="text-blue-600 text-lg">📊</span>
             </div>
-            <select
-              title="period"
-              className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#1B365D] focus:border-transparent text-sm w-full sm:w-auto"
-            >
-              <option>Today</option>
-            </select>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Total</p>
+              <p className="text-lg font-semibold text-gray-900">
+                {notifications.length}
+              </p>
+            </div>
           </div>
         </div>
-        <div className="p-4 md:p-6 space-y-4">
-          {historyItems.map((item) => (
-            <div
-              key={item.id}
-              className="flex flex-col sm:flex-row sm:items-center justify-between py-3 border-b border-gray-100 last:border-b-0 gap-2"
-            >
-              <p className="text-xs md:text-sm text-gray-900">{item.action}</p>
-              <span className="text-xs md:text-sm text-gray-500 self-start sm:self-center">
-                {item.timestamp}
-              </span>
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center">
+            <div className="p-2 bg-red-100 rounded-lg">
+              <span className="text-red-600 text-lg">🔴</span>
             </div>
-          ))}
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Unread</p>
+              <p className="text-lg font-semibold text-gray-900">
+                {notifications.filter((n) => !n.read).length}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center">
+            <div className="p-2 bg-green-100 rounded-lg">
+              <span className="text-green-600 text-lg">🏫</span>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Assignments</p>
+              <p className="text-lg font-semibold text-gray-900">
+                {
+                  notifications.filter((n) => n.category === "assignment")
+                    .length
+                }
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center">
+            <div className="p-2 bg-yellow-100 rounded-lg">
+              <span className="text-yellow-600 text-lg">📄</span>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Reports</p>
+              <p className="text-lg font-semibold text-gray-900">
+                {notifications.filter((n) => n.category === "report").length}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Notifications List */}
+      <div className="bg-white rounded-lg shadow-sm border">
+        <div className="p-4 md:p-6 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900">
+            Recent Notifications
+          </h2>
+        </div>
+        <div className="p-4 md:p-6 space-y-4">
+          {notificationsLoading && (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#1B365D] mx-auto"></div>
+              <p className="mt-2 text-gray-600">Loading notifications...</p>
+            </div>
+          )}
+
+          {notificationsError && (
+            <div className="text-center py-8">
+              <p className="text-red-500">{notificationsError}</p>
+            </div>
+          )}
+
+          {!notificationsLoading &&
+            !notificationsError &&
+            notifications.length === 0 && (
+              <div className="text-center py-8">
+                <div className="text-gray-400 text-4xl mb-4">🔔</div>
+                <p className="text-gray-500">No notifications yet</p>
+                <p className="text-sm text-gray-400 mt-1">
+                  We'll notify you about important updates
+                </p>
+              </div>
+            )}
+
+          {!notificationsLoading &&
+            !notificationsError &&
+            notifications.length > 0 && (
+              <div className="space-y-3">
+                {notifications
+                  .sort(
+                    (a, b) =>
+                      new Date(b.timestamp).getTime() -
+                      new Date(a.timestamp).getTime()
+                  )
+                  .map((notification) => (
+                    <div
+                      key={notification.id}
+                      className={`p-4 rounded-lg border transition-all duration-200 hover:shadow-md ${
+                        notification.read
+                          ? "opacity-75"
+                          : "ring-2 ring-blue-200"
+                      } ${getNotificationColor(notification.type)}`}
+                      onClick={() => markNotificationAsRead(notification.id)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start space-x-3 flex-1">
+                          <div className="text-2xl mt-1">
+                            {getNotificationIcon(notification.type)}
+                          </div>
+                          <div className="flex-1">
+                            <p
+                              className={`text-sm ${
+                                notification.read
+                                  ? "text-gray-600"
+                                  : "text-gray-900 font-medium"
+                              }`}
+                            >
+                              {notification.message}
+                            </p>
+                            <div className="flex items-center space-x-2 mt-2">
+                              <span
+                                className={`px-2 py-1 text-xs rounded-full ${
+                                  notification.category === "assignment"
+                                    ? "bg-green-100 text-green-800"
+                                    : notification.category === "report"
+                                    ? "bg-blue-100 text-blue-800"
+                                    : notification.category === "task"
+                                    ? "bg-purple-100 text-purple-800"
+                                    : notification.category === "feedback"
+                                    ? "bg-orange-100 text-orange-800"
+                                    : "bg-gray-100 text-gray-800"
+                                }`}
+                              >
+                                {notification.category.charAt(0).toUpperCase() +
+                                  notification.category.slice(1)}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                {new Date(
+                                  notification.timestamp
+                                ).toLocaleDateString()}{" "}
+                                at{" "}
+                                {new Date(
+                                  notification.timestamp
+                                ).toLocaleTimeString([], {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        {!notification.read && (
+                          <div className="w-2 h-2 bg-blue-500 rounded-full ml-2"></div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
         </div>
       </div>
     </div>
@@ -1609,6 +2099,84 @@ const EvaluatorDashboard: React.FC = () => {
     </div>
   );
 
+  const renderMessages = () => (
+    <div className="flex h-full">
+      {/* Conversation list */}
+      <div className="w-64 bg-white border-r">
+        <h2 className="p-4 font-bold">Messages</h2>
+        <ul>
+          {conversations.map((conv) => {
+            const conversationId = conv.conversation_id || conv.id;
+            const isUnread = unreadConversations.has(
+              conversationId?.toString()
+            );
+            const isSelected =
+              selectedConversation &&
+              (conv.conversation_id || conv.id) ===
+                (selectedConversation.conversation_id ||
+                  selectedConversation.id);
+
+            return (
+              <li
+                key={conversationId}
+                className={`p-4 cursor-pointer hover:bg-gray-100 transition-colors ${
+                  isSelected ? "bg-gray-200" : ""
+                }`}
+                onClick={() => {
+                  setSelectedConversation(conv);
+                  // Clear unread status when conversation is selected
+                  if (isUnread) {
+                    setUnreadConversations((prev) => {
+                      const newSet = new Set(prev);
+                      newSet.delete(conversationId?.toString());
+                      return newSet;
+                    });
+                  }
+                }}
+              >
+                <div className="flex items-center justify-between">
+                  <span className={`${isUnread ? "font-bold" : ""}`}>
+                    {conv.group_name || conv.other_user_name || "Admin"}
+                  </span>
+                  {isUnread && (
+                    <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+      {/* Chat area */}
+      <div className="flex-1">
+        {selectedConversation ? (
+          <ChatMessages
+            profile={profile}
+            conversationId={
+              selectedConversation.conversation_id || selectedConversation.id
+            }
+            recipientId={
+              selectedConversation.group_name
+                ? selectedConversation.group_name
+                : selectedConversation.receiver_id === profile.id
+                ? selectedConversation.sender_id
+                : selectedConversation.receiver_id
+            }
+            conversationType={
+              selectedConversation.group_name ? "group" : "user"
+            }
+            onNewMessage={handleNewMessage}
+            isSelected={true}
+          />
+        ) : (
+          <div className="p-8 text-gray-500">
+            Select a conversation to start messaging
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   const renderContent = () => {
     switch (activeTab) {
       case "dashboard":
@@ -1617,8 +2185,16 @@ const EvaluatorDashboard: React.FC = () => {
         return renderSchools();
       case "reports":
         return renderReports();
-      case "history":
-        return renderHistory();
+      case "messages":
+        return profileLoading ? (
+          <div className="text-center text-gray-500">Loading profile...</div>
+        ) : profileError ? (
+          <div className="text-center text-red-500">{profileError}</div>
+        ) : (
+          renderMessages()
+        );
+      case "notifications":
+        return renderNotifications();
       case "settings":
         return renderSettings();
       default:

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 // import { useAuth } from '../../context/AuthContext';
+import ChatMessages from "../../components/ChatMessages";
 
 interface StatCard {
   title: string;
@@ -49,6 +50,10 @@ interface Notification {
   id: string;
   message: string;
   timestamp: string;
+  type: "info" | "success" | "warning" | "error";
+  category: "session" | "attendance" | "report" | "task" | "general";
+  read: boolean;
+  data?: any;
 }
 
 const TrainerDashboard: React.FC = () => {
@@ -113,6 +118,196 @@ const TrainerDashboard: React.FC = () => {
     localStorage.removeItem("token");
     navigate("/auth/login", { replace: true });
   };
+
+  // Handle new messages for conversation reordering and unread status
+  const handleNewMessage = (data: any) => {
+    // Move conversation to top and mark as unread
+    setConversations((prevConversations) => {
+      const updatedConversations = [...prevConversations];
+      const conversationIndex = updatedConversations.findIndex(
+        (conv) =>
+          conv.conversation_id?.toString() ===
+            data.conversationId?.toString() ||
+          conv.id?.toString() === data.conversationId?.toString()
+      );
+
+      if (conversationIndex !== -1) {
+        // Remove conversation from current position
+        const [conversation] = updatedConversations.splice(
+          conversationIndex,
+          1
+        );
+
+        // Update conversation with new message and timestamp
+        const updatedConversation = {
+          ...conversation,
+          updated_at: new Date().toISOString(),
+          last_message: data.message,
+        };
+
+        // Add to top of list
+        updatedConversations.unshift(updatedConversation);
+      }
+
+      return updatedConversations;
+    });
+
+    // Mark conversation as unread if not currently selected
+    if (
+      !selectedConversation ||
+      (selectedConversation.conversation_id?.toString() !==
+        data.conversationId?.toString() &&
+        selectedConversation.id?.toString() !== data.conversationId?.toString())
+    ) {
+      setUnreadConversations((prev) =>
+        new Set(prev).add(data.conversationId?.toString())
+      );
+    }
+  };
+
+  // Fetch notifications from backend
+  const fetchNotifications = async () => {
+    setNotificationsLoading(true);
+    setNotificationsError(null);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/trainer/notifications`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!res.ok) throw new Error("Failed to fetch notifications");
+      const data = await res.json();
+      setNotifications(data.notifications || []);
+    } catch (err: any) {
+      setNotificationsError(err.message || "Error fetching notifications");
+      // If notifications endpoint doesn't exist, create notifications from available data
+      createNotificationsFromData();
+    } finally {
+      setNotificationsLoading(false);
+    }
+  };
+
+  // Create notifications from available data (sessions, attendance, etc.)
+  const createNotificationsFromData = () => {
+    const generatedNotifications: Notification[] = [];
+
+    // Create notifications from training sessions
+    trainingSessions.forEach((session) => {
+      generatedNotifications.push({
+        id: `session-created-${session.id}`,
+        message: `📚 Training session created: ${session.title} at ${session.location}`,
+        timestamp: session.joining_date,
+        type: "success",
+        category: "session",
+        read: false,
+        data: { sessionId: session.id, sessionName: session.title },
+      });
+    });
+
+    // Create notifications from attendance records
+    attendanceRecords.forEach((record) => {
+      generatedNotifications.push({
+        id: `attendance-uploaded-${record.id}`,
+        message: `📊 Attendance report uploaded for session`,
+        timestamp: new Date().toISOString(),
+        type: "info",
+        category: "attendance",
+        read: false,
+        data: { attendanceId: record.id },
+      });
+    });
+
+    // Add some sample notifications for demonstration
+    if (generatedNotifications.length === 0) {
+      generatedNotifications.push(
+        {
+          id: "welcome-1",
+          message:
+            "👋 Welcome to IQS Authority! Your trainer dashboard is ready.",
+          timestamp: new Date().toISOString(),
+          type: "info",
+          category: "general",
+          read: false,
+        },
+        {
+          id: "session-reminder-1",
+          message:
+            "⏰ Reminder: Training session 'Advanced Teaching Methods' starts in 2 hours",
+          timestamp: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
+          type: "warning",
+          category: "session",
+          read: false,
+          data: { sessionName: "Advanced Teaching Methods" },
+        },
+        {
+          id: "attendance-due-1",
+          message:
+            "📋 Attendance report due for 'Classroom Management' session",
+          timestamp: new Date(Date.now() - 7200000).toISOString(), // 2 hours ago
+          type: "warning",
+          category: "attendance",
+          read: false,
+        }
+      );
+    }
+
+    setNotifications(generatedNotifications);
+  };
+
+  // Mark notification as read
+  const markNotificationAsRead = (notificationId: string) => {
+    setNotifications((prev) =>
+      prev.map((notification) =>
+        notification.id === notificationId
+          ? { ...notification, read: true }
+          : notification
+      )
+    );
+  };
+
+  // Mark all notifications as read
+  const markAllNotificationsAsRead = () => {
+    setNotifications((prev) =>
+      prev.map((notification) => ({ ...notification, read: true }))
+    );
+  };
+
+  // Get notification icon based on type
+  const getNotificationIcon = (type: string) => {
+    switch (type) {
+      case "success":
+        return "✅";
+      case "error":
+        return "❌";
+      case "warning":
+        return "⚠️";
+      case "info":
+      default:
+        return "ℹ️";
+    }
+  };
+
+  // Get notification color based on type
+  const getNotificationColor = (type: string) => {
+    switch (type) {
+      case "success":
+        return "border-green-200 bg-green-50";
+      case "error":
+        return "border-red-200 bg-red-50";
+      case "warning":
+        return "border-yellow-200 bg-yellow-50";
+      case "info":
+      default:
+        return "border-blue-200 bg-blue-50";
+    }
+  };
+
+  // Fetch notifications when component mounts
+  useEffect(() => {
+    fetchNotifications();
+  }, [trainingSessions, attendanceRecords]); // Re-run when sessions or attendance change
 
   // Filtered sessions for search
   const filteredSessions = trainingSessions.filter((session) => {
@@ -253,14 +448,6 @@ const TrainerDashboard: React.FC = () => {
       reportName: "Kingston School Report",
       schoolLocation: "Nairobi Kenya",
       uploadDate: "10/5/2025",
-    }));
-
-  const notifications: Notification[] = Array(9)
-    .fill(null)
-    .map((_, i) => ({
-      id: `notification-${i}`,
-      message: "You have updated the kingston highschool report",
-      timestamp: "30 min ago",
     }));
 
   // Handle view session
@@ -404,7 +591,8 @@ const TrainerDashboard: React.FC = () => {
     { id: "training", label: "Training", icon: GraduationCap },
     { id: "attendance", label: "Attendance", icon: Users },
     { id: "reports", label: "Reports", icon: FileText },
-    { id: "notifications", label: "Notifications", icon: Bell },
+    { id: "messages", label: "Messages", icon: Bell },
+    { id: "notifications", label: "Notifications", icon: TrendingUp },
     { id: "settings", label: "Settings", icon: Settings },
   ];
 
@@ -1580,61 +1768,206 @@ const TrainerDashboard: React.FC = () => {
 
   const renderNotifications = () => (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Notifications</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl md:text-2xl font-bold text-gray-900">
+          Notifications
+        </h1>
+        {notifications.length > 0 && (
+          <button
+            onClick={markAllNotificationsAsRead}
+            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+          >
+            Mark all as read
+          </button>
+        )}
+      </div>
 
-      <div className="bg-white rounded-lg shadow-sm border">
-        <div className="p-6 border-b border-gray-200">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-900">
-              Recent Notification
-            </h2>
-            <select
-              title="recent"
-              className="border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#1B365D] focus:border-transparent"
-            >
-              <option>Today</option>
-            </select>
-          </div>
-          <div className="mt-4">
-            <div className="relative">
-              <Search
-                size={20}
-                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
-              />
-              <input
-                type="text"
-                placeholder="Search Recent Notification"
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1B365D] focus:border-transparent"
-              />
+      {/* Notification Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <span className="text-blue-600 text-lg">📊</span>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Total</p>
+              <p className="text-lg font-semibold text-gray-900">
+                {notifications.length}
+              </p>
             </div>
           </div>
         </div>
-        <div className="p-6 space-y-4">
-          {notifications.map((notification) => (
-            <div
-              key={notification.id}
-              className="flex items-center justify-between py-3 border-b border-gray-100 last:border-b-0"
-            >
-              <p className="text-sm text-gray-900">{notification.message}</p>
-              <span className="text-sm text-gray-500">
-                {notification.timestamp}
-              </span>
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center">
+            <div className="p-2 bg-red-100 rounded-lg">
+              <span className="text-red-600 text-lg">🔴</span>
             </div>
-          ))}
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Unread</p>
+              <p className="text-lg font-semibold text-gray-900">
+                {notifications.filter((n) => !n.read).length}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center">
+            <div className="p-2 bg-green-100 rounded-lg">
+              <span className="text-green-600 text-lg">📚</span>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Sessions</p>
+              <p className="text-lg font-semibold text-gray-900">
+                {notifications.filter((n) => n.category === "session").length}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center">
+            <div className="p-2 bg-yellow-100 rounded-lg">
+              <span className="text-yellow-600 text-lg">📊</span>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Attendance</p>
+              <p className="text-lg font-semibold text-gray-900">
+                {
+                  notifications.filter((n) => n.category === "attendance")
+                    .length
+                }
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Notifications List */}
+      <div className="bg-white rounded-lg shadow-sm border">
+        <div className="p-4 md:p-6 border-b border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-900">
+            Recent Notifications
+          </h2>
+        </div>
+        <div className="p-4 md:p-6 space-y-4">
+          {notificationsLoading && (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#1B365D] mx-auto"></div>
+              <p className="mt-2 text-gray-600">Loading notifications...</p>
+            </div>
+          )}
+
+          {notificationsError && (
+            <div className="text-center py-8">
+              <p className="text-red-500">{notificationsError}</p>
+            </div>
+          )}
+
+          {!notificationsLoading &&
+            !notificationsError &&
+            notifications.length === 0 && (
+              <div className="text-center py-8">
+                <div className="text-gray-400 text-4xl mb-4">🔔</div>
+                <p className="text-gray-500">No notifications yet</p>
+                <p className="text-sm text-gray-400 mt-1">
+                  We'll notify you about important updates
+                </p>
+              </div>
+            )}
+
+          {!notificationsLoading &&
+            !notificationsError &&
+            notifications.length > 0 && (
+              <div className="space-y-3">
+                {notifications
+                  .sort(
+                    (a, b) =>
+                      new Date(b.timestamp).getTime() -
+                      new Date(a.timestamp).getTime()
+                  )
+                  .map((notification) => (
+                    <div
+                      key={notification.id}
+                      className={`p-4 rounded-lg border transition-all duration-200 hover:shadow-md ${
+                        notification.read
+                          ? "opacity-75"
+                          : "ring-2 ring-blue-200"
+                      } ${getNotificationColor(notification.type)}`}
+                      onClick={() => markNotificationAsRead(notification.id)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start space-x-3 flex-1">
+                          <div className="text-2xl mt-1">
+                            {getNotificationIcon(notification.type)}
+                          </div>
+                          <div className="flex-1">
+                            <p
+                              className={`text-sm ${
+                                notification.read
+                                  ? "text-gray-600"
+                                  : "text-gray-900 font-medium"
+                              }`}
+                            >
+                              {notification.message}
+                            </p>
+                            <div className="flex items-center space-x-2 mt-2">
+                              <span
+                                className={`px-2 py-1 text-xs rounded-full ${
+                                  notification.category === "session"
+                                    ? "bg-green-100 text-green-800"
+                                    : notification.category === "attendance"
+                                    ? "bg-blue-100 text-blue-800"
+                                    : notification.category === "report"
+                                    ? "bg-purple-100 text-purple-800"
+                                    : notification.category === "task"
+                                    ? "bg-orange-100 text-orange-800"
+                                    : "bg-gray-100 text-gray-800"
+                                }`}
+                              >
+                                {notification.category.charAt(0).toUpperCase() +
+                                  notification.category.slice(1)}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                {new Date(
+                                  notification.timestamp
+                                ).toLocaleDateString()}{" "}
+                                at{" "}
+                                {new Date(
+                                  notification.timestamp
+                                ).toLocaleTimeString([], {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        {!notification.read && (
+                          <div className="w-2 h-2 bg-blue-500 rounded-full ml-2"></div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
         </div>
       </div>
     </div>
   );
 
   // Add at the top of the component:
-  const [profile, setProfile] = useState<any>(null);
+  const [profile, setProfile] = useState<any>({
+    id: "",
+    name: "",
+    email: "",
+    role: "",
+  });
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
-  const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
   const [profileFormData, setProfileFormData] = useState({
     name: "",
     email: "",
   });
+  const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -1764,6 +2097,13 @@ const TrainerDashboard: React.FC = () => {
   const [attendanceFormError, setAttendanceFormError] = useState<string | null>(
     null
   );
+
+  // Notification state
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationsError, setNotificationsError] = useState<string | null>(
+    null
+  );
   const [attendanceFormLoading, setAttendanceFormLoading] = useState(false);
 
   // Add at the top of the component:
@@ -1828,6 +2168,40 @@ const TrainerDashboard: React.FC = () => {
       setDeleteAttendanceId(null);
     }
   };
+
+  // Add at the top of the component:
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [selectedConversation, setSelectedConversation] = useState<any | null>(
+    null
+  );
+  const [unreadConversations, setUnreadConversations] = useState<Set<string>>(
+    new Set()
+  );
+
+  // Fetch conversations (inbox)
+  useEffect(() => {
+    const fetchConversations = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(
+          `${import.meta.env.VITE_API_URL}/api/messages/inbox`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        if (!res.ok) throw new Error("Failed to fetch conversations");
+        const data = await res.json();
+        setConversations(data.inbox || []);
+        if (!selectedConversation && data.inbox && data.inbox.length > 0) {
+          setSelectedConversation(data.inbox[0]);
+        }
+      } catch (err) {
+        // handle error
+      }
+    };
+    if (profile.id) fetchConversations();
+    // eslint-disable-next-line
+  }, [profile.id]);
 
   // Responsive sidebar and main layout
   return (
@@ -1915,6 +2289,113 @@ const TrainerDashboard: React.FC = () => {
                 return renderAttendance();
               case "reports":
                 return renderReports();
+              case "messages":
+                return profileLoading ? (
+                  <div className="text-center text-gray-500">
+                    Loading profile...
+                  </div>
+                ) : profileError ? (
+                  <div className="text-center text-red-500">{profileError}</div>
+                ) : (
+                  <div className="flex h-full">
+                    {/* Conversation list */}
+                    <div className="w-64 bg-white border-r">
+                      <h2 className="p-4 font-bold">Messages</h2>
+                      <ul>
+                        {conversations.map((conv) => {
+                          const conversationId =
+                            conv.conversation_id || conv.id;
+                          const isUnread = unreadConversations.has(
+                            conversationId?.toString()
+                          );
+                          const isSelected =
+                            selectedConversation &&
+                            (conv.conversation_id || conv.id) ===
+                              (selectedConversation.conversation_id ||
+                                selectedConversation.id);
+
+                          return (
+                            <li
+                              key={conversationId}
+                              className={`p-4 cursor-pointer hover:bg-gray-100 transition-colors ${
+                                isSelected ? "bg-gray-200" : ""
+                              }`}
+                              onClick={() => {
+                                setSelectedConversation(conv);
+                                // Clear unread status when conversation is selected
+                                if (isUnread) {
+                                  setUnreadConversations((prev) => {
+                                    const newSet = new Set(prev);
+                                    newSet.delete(conversationId?.toString());
+                                    return newSet;
+                                  });
+                                }
+                              }}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span
+                                  className={`${isUnread ? "font-bold" : ""}`}
+                                >
+                                  {conv.group_name ||
+                                    conv.other_user_name ||
+                                    "Admin"}
+                                </span>
+                                {isUnread && (
+                                  <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                                )}
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                    {/* Chat area */}
+                    <div className="flex-1">
+                      {selectedConversation ? (
+                        (() => {
+                          const recipientId = selectedConversation.group_name
+                            ? selectedConversation.group_name // Group message
+                            : selectedConversation.receiver_id === profile.id
+                            ? selectedConversation.sender_id // Direct message - other user sent to me
+                            : selectedConversation.receiver_id; // Direct message - I sent to other user
+
+                          console.log("TrainerDashboard: ChatMessages props:", {
+                            conversationId:
+                              selectedConversation.conversation_id ||
+                              selectedConversation.id,
+                            recipientId,
+                            group_name: selectedConversation.group_name,
+                            sender_id: selectedConversation.sender_id,
+                            receiver_id: selectedConversation.receiver_id,
+                            profile_id: profile.id,
+                          });
+
+                          return (
+                            <ChatMessages
+                              profile={profile}
+                              conversationId={
+                                selectedConversation.conversation_id ||
+                                selectedConversation.id
+                              }
+                              recipientId={recipientId}
+                              conversationType={
+                                selectedConversation.group_name
+                                  ? "group"
+                                  : "user"
+                              }
+                              onNewMessage={handleNewMessage}
+                              isSelected={true}
+                            />
+                          );
+                        })()
+                      ) : (
+                        <div className="p-8 text-gray-500">
+                          Select a conversation to start messaging
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
               case "notifications":
                 return renderNotifications();
               case "settings":

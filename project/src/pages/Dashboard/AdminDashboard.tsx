@@ -1,10 +1,10 @@
 "use client";
 
-import type React from "react";
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import DashboardNavbar from "../../components/DashboardNavbar";
+import { io } from "socket.io-client";
 import {
   LayoutDashboard,
   SchoolIcon,
@@ -22,10 +22,10 @@ import {
   ChevronRight,
   ChevronDown,
   X,
+  Bell,
 } from "lucide-react";
 // Add a comment to remind user to install socket.io-client if not already installed
 // npm install socket.io-client
-import { io } from "socket.io-client";
 import toast from "react-hot-toast";
 
 interface StatCard {
@@ -90,6 +90,10 @@ interface Conversation {
   type: string; // 'user' | 'group'
   group?: string; // group name if group
   name?: string; // display name
+  group_name?: string; // <-- add this
+  other_user_name?: string; // <-- add this
+  other_user_id?: string;
+  user_ids?: string[];
 }
 interface ConversationMessage {
   id: string;
@@ -127,6 +131,10 @@ const AdminDashboard: React.FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const [notifications, setNotifications] = useState<any[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationsError, setNotificationsError] = useState<string | null>(
+    null
+  );
 
   const [showCompose, setShowCompose] = useState(false);
   const [composeRecipient, setComposeRecipient] = useState("");
@@ -148,6 +156,23 @@ const AdminDashboard: React.FC = () => {
   const [conversationError, setConversationError] = useState<string | null>(
     null
   );
+  const [realTimeMessages, setRealTimeMessages] = useState<any[]>([]);
+  const [unreadConversations, setUnreadConversations] = useState<Set<string>>(
+    new Set()
+  );
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom function
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+  };
+
+  // Auto-scroll when messages are first loaded or when new messages arrive
+  useEffect(() => {
+    if (conversationMessages.length > 0 || realTimeMessages.length > 0) {
+      scrollToBottom();
+    }
+  }, [conversationMessages, realTimeMessages]);
 
   // Assignment modal state
   const [showAssignmentModal, setShowAssignmentModal] = useState(false);
@@ -173,6 +198,89 @@ const AdminDashboard: React.FC = () => {
 
   // 1. Add applications state and fetch applications in useEffect
   const [applications, setApplications] = useState<any[]>([]);
+
+  // Fetch notifications function
+  const fetchNotifications = async () => {
+    setNotificationsLoading(true);
+    setNotificationsError(null);
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/admin/notifications`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch notifications");
+      }
+
+      const data = await response.json();
+      setNotifications(data.notifications || []);
+    } catch (error: any) {
+      console.error("Error fetching notifications:", error);
+      setNotificationsError(error.message);
+      // Create fallback notifications if API fails
+      createFallbackNotifications();
+    } finally {
+      setNotificationsLoading(false);
+    }
+  };
+
+  // Create fallback notifications when API is not available
+  const createFallbackNotifications = () => {
+    const fallbackNotifications = [
+      {
+        id: "welcome",
+        message: "👋 Welcome to IQS Authority! Your admin dashboard is ready.",
+        timestamp: new Date().toISOString(),
+        type: "info",
+        category: "general",
+        read: false,
+        data: {},
+      },
+      {
+        id: "pending-applications",
+        message: "📝 You have pending school applications to review",
+        timestamp: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
+        type: "warning",
+        category: "application",
+        read: false,
+        data: {},
+      },
+      {
+        id: "recent-reports",
+        message: "📊 New evaluation reports have been submitted",
+        timestamp: new Date(Date.now() - 172800000).toISOString(), // 2 days ago
+        type: "success",
+        category: "report",
+        read: false,
+        data: {},
+      },
+    ];
+    setNotifications(fallbackNotifications);
+  };
+
+  // Mark notification as read
+  const markNotificationAsRead = (notificationId: string) => {
+    setNotifications((prev) =>
+      prev.map((notification) =>
+        notification.id === notificationId
+          ? { ...notification, read: true }
+          : notification
+      )
+    );
+  };
+
+  // Mark all notifications as read
+  const markAllNotificationsAsRead = () => {
+    setNotifications((prev) =>
+      prev.map((notification) => ({ ...notification, read: true }))
+    );
+  };
 
   useEffect(() => {
     const fetchApplications = async () => {
@@ -293,12 +401,12 @@ const AdminDashboard: React.FC = () => {
 
   useEffect(() => {
     const socket = io(import.meta.env.VITE_API_URL);
-    console.log("Socket.IO client initialized", socket);
+    // Socket.IO client initialized
 
     const userId = localStorage.getItem("userId");
     if (userId) {
       socket.emit("register", userId);
-      console.log("Register event emitted for userId:", userId);
+      // Register event emitted for userId
     } else {
       console.warn(
         "No userId found in localStorage during socket registration"
@@ -306,7 +414,7 @@ const AdminDashboard: React.FC = () => {
     }
 
     socket.on("receive-message", (data: any) => {
-      console.log("Received message via socket:", data);
+      // Received message via socket
       setNotifications((prev) => [
         {
           id: Date.now().toString(),
@@ -341,6 +449,7 @@ const AdminDashboard: React.FC = () => {
       }
     };
     fetchAllUsers();
+    fetchNotifications();
   }, []);
 
   // Fetch profile when settings tab is active
@@ -349,6 +458,13 @@ const AdminDashboard: React.FC = () => {
       fetchProfile();
     }
   }, [activeTab]);
+
+  // Fetch profile when messaging tab is active (needed for sending messages)
+  useEffect(() => {
+    if (activeTab === "messaging" && !profile) {
+      fetchProfile();
+    }
+  }, [activeTab, profile]);
 
   const fetchProfile = async () => {
     setProfileLoading(true);
@@ -415,6 +531,75 @@ const AdminDashboard: React.FC = () => {
     { id: "trainer", label: "Trainer", count: 3, type: "trainer" },
   ];
 
+  // Socket connection for real-time messages
+  useEffect(() => {
+    if (activeTab === "messaging" && profile?.id) {
+      const socket = io(
+        import.meta.env.VITE_API_URL || "http://localhost:5000"
+      );
+
+      socket.on("connect", () => {
+        // AdminDashboard: Socket connected
+        socket.emit("register", profile.id);
+      });
+
+      socket.on("receive-message", (data: any) => {
+        // AdminDashboard: Received real-time message
+
+        // Move conversation to top and mark as unread
+        setConversations((prevConversations) => {
+          const updatedConversations = [...prevConversations];
+          const conversationIndex = updatedConversations.findIndex(
+            (conv) => conv.id.toString() === data.conversationId?.toString()
+          );
+
+          if (conversationIndex !== -1) {
+            // Remove conversation from current position
+            const [conversation] = updatedConversations.splice(
+              conversationIndex,
+              1
+            );
+
+            // Update conversation with new message and timestamp
+            const updatedConversation = {
+              ...conversation,
+              updated_at: new Date().toISOString(),
+              last_message: data.message,
+            };
+
+            // Add to top of list
+            updatedConversations.unshift(updatedConversation);
+          }
+
+          return updatedConversations;
+        });
+
+        // Mark conversation as unread if not currently selected
+        if (
+          !selectedConversation ||
+          selectedConversation.id.toString() !== data.conversationId?.toString()
+        ) {
+          setUnreadConversations((prev) =>
+            new Set(prev).add(data.conversationId?.toString())
+          );
+        }
+
+        // Only add to real-time messages if it belongs to the current conversation
+        if (
+          selectedConversation &&
+          data.conversationId &&
+          data.conversationId.toString() === selectedConversation.id.toString()
+        ) {
+          setRealTimeMessages((prev) => [...prev, data]);
+        }
+      });
+
+      return () => {
+        socket.disconnect();
+      };
+    }
+  }, [activeTab, profile?.id, selectedConversation?.id]);
+
   // Fetch conversations when messaging tab is active
   useEffect(() => {
     if (activeTab === "messaging") {
@@ -429,7 +614,7 @@ const AdminDashboard: React.FC = () => {
     try {
       const token = localStorage.getItem("token");
       const res = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/message/conversations`,
+        `${import.meta.env.VITE_API_URL}/api/messages/conversations`,
         {
           headers: { Authorization: `Bearer ${token}` },
         }
@@ -447,19 +632,21 @@ const AdminDashboard: React.FC = () => {
   const fetchConversationMessages = async (conversationId: string) => {
     setConversationLoading(true);
     setConversationError(null);
+    // Clear real-time messages when switching conversations
+    setRealTimeMessages([]);
     try {
       const token = localStorage.getItem("token");
       const res = await fetch(
         `${
           import.meta.env.VITE_API_URL
-        }/api/message/conversation/${conversationId}`,
+        }/api/messages/conversation/${conversationId}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
       if (!res.ok) throw new Error("Failed to fetch messages");
       const data = await res.json();
-      console.log("Fetched messages:", data);
+      // Fetched messages
       setConversationMessages(data.messages || []);
     } catch (err: any) {
       setConversationError(err.message || "Error loading messages");
@@ -472,27 +659,57 @@ const AdminDashboard: React.FC = () => {
     conversationId: string,
     message: string
   ) => {
-    console.log(
-      "sendConversationMessage called with:",
-      conversationId,
-      message
-    );
+    // sendConversationMessage called
     setConversationLoading(true);
     setConversationError(null);
     try {
       const token = localStorage.getItem("token");
+
+      // Check if profile is loaded
+      if (!profile) {
+        throw new Error("Profile not loaded. Please wait and try again.");
+      }
+
+      // Find the selected conversation to get recipient info
+      const selectedConv = conversations.find(
+        (conv) => conv.id === conversationId
+      );
+      if (!selectedConv) {
+        throw new Error("Conversation not found");
+      }
+
+      // Determine recipient and type
+      let recipientId, type;
+      if (selectedConv.group_name) {
+        // Group message
+        recipientId = selectedConv.group_name;
+        type = "group";
+      } else {
+        // Direct message - find the other user
+        recipientId =
+          selectedConv.other_user_id ||
+          selectedConv.user_ids?.find((id) => id !== profile.id);
+        type = "user";
+      }
+
+      // Sending message
+
       const res = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/message/send`,
+        `${import.meta.env.VITE_API_URL}/api/messages/send`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ conversationId, message }),
+          body: JSON.stringify({
+            recipientId,
+            message,
+            type,
+          }),
         }
       );
-      console.log("Fetch response:", res);
+      // Fetch response
       if (!res.ok) throw new Error("Failed to send message");
       await fetchConversationMessages(conversationId); // Refresh messages
       setMessageInput(""); // Clear input
@@ -514,7 +731,7 @@ const AdminDashboard: React.FC = () => {
     try {
       const token = localStorage.getItem("token");
       const res = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/message/send`,
+        `${import.meta.env.VITE_API_URL}/api/messages/send`,
         {
           method: "POST",
           headers: {
@@ -658,7 +875,7 @@ const AdminDashboard: React.FC = () => {
       );
       if (!schoolsRes.ok) throw new Error("Failed to refresh schools");
       const schoolsData = await schoolsRes.json();
-      console.log("[RefreshSchools] schoolsData:", schoolsData);
+      // RefreshSchools data received
       setRecentSchools(schoolsData.slice(0, 3));
       setRequestedSchools(
         schoolsData.filter((s: School) => s.status === "pending")
@@ -729,6 +946,7 @@ const AdminDashboard: React.FC = () => {
       label: "Evaluation and Reports",
       icon: FileText,
     },
+    { id: "notifications", label: "Notifications", icon: Bell },
     { id: "messaging", label: "Messaging", icon: MessageSquare },
     { id: "settings", label: "Settings", icon: Settings },
   ];
@@ -2284,50 +2502,88 @@ const AdminDashboard: React.FC = () => {
             {conversationError && (
               <div className="text-red-600">{conversationError}</div>
             )}
-            {conversations.map((conv) => (
-              <div
-                key={conv.id}
-                onClick={() => {
-                  setSelectedConversation(conv);
-                  setShowMobileMessageList(false);
-                  fetchConversationMessages(conv.id);
-                }}
-                className={`flex items-start space-x-3 p-3 rounded-lg cursor-pointer transition-colors ${
-                  selectedConversation?.id === conv.id
-                    ? "bg-blue-50 border border-blue-200"
-                    : "hover:bg-gray-50"
-                }`}
-              >
-                <img
-                  src={"/placeholder.svg"}
-                  alt={conv.name || conv.group || "Conversation"}
-                  className="w-8 h-8 sm:w-10 sm:h-10 rounded-full"
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {conv.group || conv.name || conv.id}
+            {conversations.map((conv) => {
+              // Helper function to get user name
+              const getUserName = (userId: string) => {
+                if (conv.other_user_name) return conv.other_user_name;
+                const user = allUsers.find((u: any) => u.id === userId);
+                return user ? user.name : `User ${userId}`;
+              };
+
+              // Determine display name
+              let displayName;
+              if (conv.type === "group") {
+                displayName = conv.group_name || conv.group || "Group";
+              } else {
+                // For individual conversations
+                const otherUserId =
+                  conv.other_user_id ||
+                  conv.user_ids?.find((id: string) => id !== profile?.id);
+                displayName = otherUserId
+                  ? getUserName(otherUserId)
+                  : `User ${conv.id}`;
+              }
+
+              return (
+                <div
+                  key={conv.id}
+                  onClick={() => {
+                    setSelectedConversation(conv);
+                    setShowMobileMessageList(false);
+                    fetchConversationMessages(conv.id);
+                    // Clear unread status when conversation is selected
+                    setUnreadConversations((prev) => {
+                      const newSet = new Set(prev);
+                      newSet.delete(conv.id.toString());
+                      return newSet;
+                    });
+                  }}
+                  className={`flex items-start space-x-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                    selectedConversation?.id === conv.id
+                      ? "bg-blue-50 border border-blue-200"
+                      : "hover:bg-gray-50"
+                  }`}
+                >
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-[#1B365D] text-white flex items-center justify-center text-sm font-semibold">
+                    {displayName.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {displayName}
+                        </p>
+                        {unreadConversations.has(conv.id.toString()) && (
+                          <div className="w-2 h-2 bg-red-500 rounded-full flex-shrink-0"></div>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        {conv.updated_at
+                          ? new Date(conv.updated_at).toLocaleString()
+                          : ""}
+                      </p>
+                    </div>
+                    <p className="text-xs text-gray-500 mb-1">
+                      {conv.type === "group" ? "Group" : "Individual"}
                     </p>
-                    <p className="text-xs text-gray-500">
-                      {conv.updated_at
-                        ? new Date(conv.updated_at).toLocaleString()
-                        : ""}
+                    <p
+                      className={`text-sm truncate ${
+                        unreadConversations.has(conv.id.toString())
+                          ? "text-gray-900 font-medium"
+                          : "text-gray-600"
+                      }`}
+                    >
+                      {conv.last_message}
                     </p>
                   </div>
-                  <p className="text-xs text-gray-500 mb-1">
-                    {conv.type === "group" ? conv.group : "User"}
-                  </p>
-                  <p className="text-sm text-gray-600 truncate">
-                    {conv.last_message}
-                  </p>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
         {/* Chat Area */}
         <div
-          className={`lg:col-span-2 bg-white rounded-lg shadow-sm border flex flex-col ${
+          className={`lg:col-span-2 bg-white rounded-lg shadow-sm border flex flex-col h-[60vh] max-h-[60vh] ${
             showMobileMessageList && selectedConversation
               ? "hidden lg:flex"
               : ""
@@ -2335,7 +2591,7 @@ const AdminDashboard: React.FC = () => {
         >
           {selectedConversation ? (
             <>
-              <div className="p-4 border-b border-gray-200">
+              <div className="p-4 border-b border-gray-200 flex-shrink-0">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
                     <button
@@ -2344,25 +2600,78 @@ const AdminDashboard: React.FC = () => {
                     >
                       <ChevronLeft size={20} />
                     </button>
-                    <img
-                      src={"/placeholder.svg"}
-                      alt={
-                        selectedConversation.name ||
-                        selectedConversation.group ||
-                        "Conversation"
-                      }
-                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-full"
-                    />
+                    <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-[#1B365D] text-white flex items-center justify-center text-sm font-semibold">
+                      {(() => {
+                        // Helper function to get user name
+                        const getUserName = (userId: string) => {
+                          if (selectedConversation.other_user_name)
+                            return selectedConversation.other_user_name;
+                          const user = allUsers.find(
+                            (u: any) => u.id === userId
+                          );
+                          return user ? user.name : `User ${userId}`;
+                        };
+
+                        // Determine display name
+                        if (selectedConversation.type === "group") {
+                          return (
+                            selectedConversation.group_name ||
+                            selectedConversation.group ||
+                            "Group"
+                          )
+                            .charAt(0)
+                            .toUpperCase();
+                        } else {
+                          // For individual conversations
+                          const otherUserId =
+                            selectedConversation.other_user_id ||
+                            selectedConversation.user_ids?.find(
+                              (id: string) => id !== profile?.id
+                            );
+                          const displayName = otherUserId
+                            ? getUserName(otherUserId)
+                            : `User ${selectedConversation.id}`;
+                          return displayName.charAt(0).toUpperCase();
+                        }
+                      })()}
+                    </div>
                     <div>
                       <h3 className="text-base sm:text-lg font-semibold text-gray-900">
-                        {selectedConversation.name ||
-                          selectedConversation.group ||
-                          selectedConversation.id}
+                        {(() => {
+                          // Helper function to get user name
+                          const getUserName = (userId: string) => {
+                            if (selectedConversation.other_user_name)
+                              return selectedConversation.other_user_name;
+                            const user = allUsers.find(
+                              (u: any) => u.id === userId
+                            );
+                            return user ? user.name : `User ${userId}`;
+                          };
+
+                          // Determine display name
+                          if (selectedConversation.type === "group") {
+                            return (
+                              selectedConversation.group_name ||
+                              selectedConversation.group ||
+                              "Group"
+                            );
+                          } else {
+                            // For individual conversations
+                            const otherUserId =
+                              selectedConversation.other_user_id ||
+                              selectedConversation.user_ids?.find(
+                                (id: string) => id !== profile?.id
+                              );
+                            return otherUserId
+                              ? getUserName(otherUserId)
+                              : `User ${selectedConversation.id}`;
+                          }
+                        })()}
                       </h3>
                       <p className="text-xs sm:text-sm text-gray-500">
                         {selectedConversation.type === "group"
-                          ? selectedConversation.group
-                          : "User"}
+                          ? "Group"
+                          : "Individual"}
                       </p>
                     </div>
                   </div>
@@ -2384,8 +2693,8 @@ const AdminDashboard: React.FC = () => {
                       } mb-2`}
                     >
                       <div className="flex items-end">
-                        <div className="w-8 h-8 rounded-full bg-gray-400 flex items-center justify-center text-white mr-2">
-                          {msg.sender_name?.[0] || "?"}
+                        <div className="w-8 h-8 rounded-full bg-[#1B365D] flex items-center justify-center text-white mr-2 text-sm font-semibold">
+                          {msg.sender_name?.[0]?.toUpperCase() || "?"}
                         </div>
                         <div
                           className={`rounded-lg p-3 max-w-xs sm:max-w-md ${
@@ -2407,8 +2716,44 @@ const AdminDashboard: React.FC = () => {
                     </div>
                   );
                 })}
+                {/* Real-time messages */}
+                {realTimeMessages.map((msg, idx) => {
+                  const isSelf = String(msg.sender_id) === String(profile?.id);
+                  return (
+                    <div
+                      key={`realtime-${idx}`}
+                      className={`flex ${
+                        isSelf ? "justify-end" : "justify-start"
+                      } mb-2`}
+                    >
+                      <div className="flex items-end">
+                        <div className="w-8 h-8 rounded-full bg-[#1B365D] flex items-center justify-center text-white mr-2 text-sm font-semibold">
+                          {msg.sender_name?.[0]?.toUpperCase() || "?"}
+                        </div>
+                        <div
+                          className={`rounded-lg p-3 max-w-xs sm:max-w-md ${
+                            isSelf
+                              ? "bg-blue-500 text-white"
+                              : "bg-gray-100 text-gray-900"
+                          }`}
+                        >
+                          <p className="text-sm">{msg.message}</p>
+                          <p
+                            className={`text-xs mt-2 ${
+                              isSelf ? "text-gray-200" : "text-gray-500"
+                            }`}
+                          >
+                            {msg.sender_name} • Now
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {/* Debug info - shows when real-time messages are received */}
+                <div ref={messagesEndRef} />
               </div>
-              <div className="p-4 border-t border-gray-200">
+              <div className="p-4 border-t border-gray-200 flex-shrink-0">
                 {conversationError && (
                   <div className="mb-2 text-sm text-red-600">
                     {conversationError}
@@ -2632,6 +2977,237 @@ const AdminDashboard: React.FC = () => {
     </div>
   );
 
+  const renderNotifications = () => {
+    // Calculate notification stats
+    const totalNotifications = notifications.length;
+    const unreadNotifications = notifications.filter((n) => !n.read).length;
+    const applicationNotifications = notifications.filter(
+      (n) => n.category === "application"
+    ).length;
+    const reportNotifications = notifications.filter(
+      (n) => n.category === "report"
+    ).length;
+    const assignmentNotifications = notifications.filter(
+      (n) => n.category === "assignment"
+    ).length;
+    const userNotifications = notifications.filter(
+      (n) => n.category === "user"
+    ).length;
+
+    return (
+      <div className="space-y-4 sm:space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+            Notifications
+          </h1>
+          <button
+            className="lg:hidden p-2 rounded-lg bg-[#1B365D] text-white"
+            onClick={() => setSidebarOpen(true)}
+          >
+            <Menu size={20} />
+          </button>
+        </div>
+
+        {/* Notification Stats */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="bg-white rounded-lg p-4 shadow-sm border">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Total</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {totalNotifications}
+                </p>
+              </div>
+              <div className="bg-blue-100 text-blue-600 p-2 rounded-lg">
+                <Bell size={20} />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg p-4 shadow-sm border">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Unread</p>
+                <p className="text-2xl font-bold text-orange-600">
+                  {unreadNotifications}
+                </p>
+              </div>
+              <div className="bg-orange-100 text-orange-600 p-2 rounded-lg">
+                <Bell size={20} />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg p-4 shadow-sm border">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">
+                  Applications
+                </p>
+                <p className="text-2xl font-bold text-yellow-600">
+                  {applicationNotifications}
+                </p>
+              </div>
+              <div className="bg-yellow-100 text-yellow-600 p-2 rounded-lg">
+                <FileText size={20} />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg p-4 shadow-sm border">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Reports</p>
+                <p className="text-2xl font-bold text-green-600">
+                  {reportNotifications}
+                </p>
+              </div>
+              <div className="bg-green-100 text-green-600 p-2 rounded-lg">
+                <FileText size={20} />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg p-4 shadow-sm border">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Assignments</p>
+                <p className="text-2xl font-bold text-purple-600">
+                  {assignmentNotifications}
+                </p>
+              </div>
+              <div className="bg-purple-100 text-purple-600 p-2 rounded-lg">
+                <Users size={20} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Notifications List */}
+        <div className="bg-white rounded-lg shadow-sm border">
+          <div className="p-4 sm:p-6 border-b border-gray-200">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Recent Notifications
+              </h2>
+              <div className="flex gap-2">
+                <button
+                  onClick={markAllNotificationsAsRead}
+                  className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors"
+                >
+                  Mark All Read
+                </button>
+                <button
+                  onClick={fetchNotifications}
+                  className="bg-[#1B365D] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#2563EB] transition-colors"
+                >
+                  Refresh
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 sm:p-6 h-96 overflow-y-auto">
+            {notificationsLoading ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#1B365D] mx-auto"></div>
+                <p className="text-gray-500 mt-2">Loading notifications...</p>
+              </div>
+            ) : notificationsError ? (
+              <div className="text-center py-8">
+                <p className="text-red-500">{notificationsError}</p>
+                <button
+                  onClick={fetchNotifications}
+                  className="mt-2 bg-[#1B365D] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#2563EB] transition-colors"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : notifications.length === 0 ? (
+              <div className="text-center py-8">
+                <Bell size={48} className="text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-500">No notifications yet</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {notifications.map((notification) => (
+                  <div
+                    key={notification.id}
+                    className={`p-4 rounded-lg border transition-colors cursor-pointer ${
+                      notification.read
+                        ? "bg-gray-50 border-gray-200"
+                        : "bg-blue-50 border-blue-200"
+                    }`}
+                    onClick={() => markNotificationAsRead(notification.id)}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-lg">
+                            {notification.message.split(" ")[0]}
+                          </span>
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              notification.category === "application"
+                                ? "bg-yellow-100 text-yellow-800"
+                                : notification.category === "report"
+                                ? "bg-green-100 text-green-800"
+                                : notification.category === "assignment"
+                                ? "bg-purple-100 text-purple-800"
+                                : notification.category === "user"
+                                ? "bg-blue-100 text-blue-800"
+                                : "bg-gray-100 text-gray-800"
+                            }`}
+                          >
+                            {notification.category}
+                          </span>
+                          {!notification.read && (
+                            <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                          )}
+                        </div>
+                        <p
+                          className={`text-sm ${
+                            notification.read
+                              ? "text-gray-600"
+                              : "text-gray-900 font-medium"
+                          }`}
+                        >
+                          {notification.message}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-2">
+                          {new Date(notification.timestamp).toLocaleString()}
+                        </p>
+                      </div>
+                      <div
+                        className={`ml-4 p-2 rounded-lg ${
+                          notification.type === "success"
+                            ? "bg-green-100 text-green-600"
+                            : notification.type === "warning"
+                            ? "bg-yellow-100 text-yellow-600"
+                            : notification.type === "error"
+                            ? "bg-red-100 text-red-600"
+                            : "bg-blue-100 text-blue-600"
+                        }`}
+                      >
+                        {notification.type === "success"
+                          ? "✓"
+                          : notification.type === "warning"
+                          ? "⚠"
+                          : notification.type === "error"
+                          ? "✗"
+                          : "ℹ"}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderContent = () => {
     switch (activeTab) {
       case "dashboard":
@@ -2642,6 +3218,8 @@ const AdminDashboard: React.FC = () => {
         return renderEvaluators();
       case "evaluation-reports":
         return renderEvaluationReports();
+      case "notifications":
+        return renderNotifications();
       case "messaging":
         return renderMessaging();
       case "settings":
@@ -2659,7 +3237,7 @@ const AdminDashboard: React.FC = () => {
 
   // Add these handlers near the other handlers in the component:
   const handleApproveSchool = async (schoolId: string) => {
-    console.log("[Approve] Called for schoolId:", schoolId);
+    // Approve called for schoolId
     setLoading(true);
     setError(null);
     try {
@@ -2679,7 +3257,7 @@ const AdminDashboard: React.FC = () => {
           }),
         }
       );
-      console.log("[Approve] API response status:", res.status);
+      // API response status
       if (!res.ok) {
         const errorText = await res.text();
         console.error("[Approve] API error:", errorText);
@@ -2961,21 +3539,6 @@ const AdminDashboard: React.FC = () => {
           {toastMessage}
         </div>
       )}
-      {notifications.length > 0 && (
-        <div className="p-4 md:p-6 space-y-4">
-          {notifications.map((notification) => (
-            <div
-              key={notification.id}
-              className="flex flex-col sm:flex-row sm:items-center justify-between py-2 border-b border-gray-100 last:border-b-0 space-y-1 sm:space-y-0"
-            >
-              <p className="text-sm text-gray-900">{notification.message}</p>
-              <span className="text-sm text-gray-500">
-                {notification.timestamp}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
       {showAssignmentModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -3000,51 +3563,43 @@ const AdminDashboard: React.FC = () => {
               {assignmentSuccess && (
                 <div className="text-green-600 mb-4">{assignmentSuccess}</div>
               )}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    School
-                  </label>
-                  <select
-                    className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#1B365D] focus:border-transparent"
-                    value={selectedSchoolForAssignment?.id || ""}
-                    onChange={(e) => {
-                      const selectedSchool = requestedSchools
-                        .filter((s) => !s.evaluator_id)
-                        .find((school) => school.id === e.target.value);
-                      setSelectedSchoolForAssignment(selectedSchool);
-                    }}
-                  >
-                    <option value="">Select a school</option>
-                    {requestedSchools
-                      .filter((s) => !s.evaluator_id)
-                      .map((school) => (
-                        <option key={school.id} value={school.id}>
-                          {school.name}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Evaluator
-                  </label>
-                  <select
-                    className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#1B365D] focus:border-transparent"
-                    value={selectedEvaluatorForAssignment}
-                    onChange={(e) =>
-                      setSelectedEvaluatorForAssignment(e.target.value)
-                    }
-                  >
-                    <option value="">Select an evaluator</option>
-                    {evaluators.map((evaluator) => (
-                      <option key={evaluator.id} value={evaluator.id}>
-                        {evaluator.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+
+              {/* Display selected school as read-only */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  School
+                </label>
+                <p className="text-gray-900 font-medium">
+                  {selectedSchoolForAssignment?.name || "No school selected"}
+                </p>
+                {selectedSchoolForAssignment?.country && (
+                  <p className="text-sm text-gray-600 mt-1">
+                    {selectedSchoolForAssignment.country}
+                  </p>
+                )}
               </div>
+
+              {/* Evaluator selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Evaluator
+                </label>
+                <select
+                  className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-[#1B365D] focus:border-transparent"
+                  value={selectedEvaluatorForAssignment}
+                  onChange={(e) =>
+                    setSelectedEvaluatorForAssignment(e.target.value)
+                  }
+                >
+                  <option value="">Select an evaluator</option>
+                  {evaluators.map((evaluator) => (
+                    <option key={evaluator.id} value={evaluator.id}>
+                      {evaluator.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="flex justify-end space-x-2">
                 <button
                   className="px-4 py-2 rounded bg-gray-200"

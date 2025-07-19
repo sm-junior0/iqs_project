@@ -18,6 +18,7 @@ import {
 import JSZip from "jszip";
 import { io } from "socket.io-client";
 import { useAuth } from "../../context/AuthContext";
+import ChatMessages from "../../components/ChatMessages";
 
 interface Application {
   id: string;
@@ -30,6 +31,10 @@ interface Notification {
   id: string;
   message: string;
   timestamp: string;
+  type: "info" | "success" | "warning" | "error";
+  category: "application" | "evaluator" | "approval" | "feedback" | "general";
+  read: boolean;
+  data?: any;
 }
 
 interface Feedback {
@@ -69,6 +74,52 @@ const SchoolDashboard: React.FC = () => {
   const handleSignOut = () => {
     localStorage.removeItem("token");
     navigate("/auth/login", { replace: true });
+  };
+
+  // Handle new messages for conversation reordering and unread status
+  const handleNewMessage = (data: any) => {
+    // Move conversation to top and mark as unread
+    setConversations((prevConversations) => {
+      const updatedConversations = [...prevConversations];
+      const conversationIndex = updatedConversations.findIndex(
+        (conv) =>
+          conv.conversation_id?.toString() ===
+            data.conversationId?.toString() ||
+          conv.id?.toString() === data.conversationId?.toString()
+      );
+
+      if (conversationIndex !== -1) {
+        // Remove conversation from current position
+        const [conversation] = updatedConversations.splice(
+          conversationIndex,
+          1
+        );
+
+        // Update conversation with new message and timestamp
+        const updatedConversation = {
+          ...conversation,
+          updated_at: new Date().toISOString(),
+          last_message: data.message,
+        };
+
+        // Add to top of list
+        updatedConversations.unshift(updatedConversation);
+      }
+
+      return updatedConversations;
+    });
+
+    // Mark conversation as unread if not currently selected
+    if (
+      !selectedConversation ||
+      (selectedConversation.conversation_id?.toString() !==
+        data.conversationId?.toString() &&
+        selectedConversation.id?.toString() !== data.conversationId?.toString())
+    ) {
+      setUnreadConversations((prev) =>
+        new Set(prev).add(data.conversationId?.toString())
+      );
+    }
   };
 
   const [dashboardStats, setDashboardStats] = useState<any>(null);
@@ -133,6 +184,172 @@ const SchoolDashboard: React.FC = () => {
   useEffect(() => {
     fetchApplications();
   }, []);
+
+  // Fetch notifications from backend
+  const fetchNotifications = async () => {
+    setNotificationsLoading(true);
+    setNotificationsError(null);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/school/notifications`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!res.ok) throw new Error("Failed to fetch notifications");
+      const data = await res.json();
+      setNotifications(data.notifications || []);
+    } catch (err: any) {
+      setNotificationsError(err.message || "Error fetching notifications");
+      // If notifications endpoint doesn't exist, create notifications from available data
+      createNotificationsFromData();
+    } finally {
+      setNotificationsLoading(false);
+    }
+  };
+
+  // Create notifications from available data (applications, feedback, etc.)
+  const createNotificationsFromData = () => {
+    const generatedNotifications: Notification[] = [];
+
+    // Create notifications from applications
+    applications.forEach((app) => {
+      if (app.applicationStatus === "Approved") {
+        generatedNotifications.push({
+          id: `app-approved-${app.id}`,
+          message: `🎉 Congratulations! Your accreditation application has been approved.`,
+          timestamp: app.applicationDate,
+          type: "success",
+          category: "approval",
+          read: false,
+          data: { applicationId: app.id },
+        });
+      } else if (app.applicationStatus === "Rejected") {
+        generatedNotifications.push({
+          id: `app-rejected-${app.id}`,
+          message: `❌ Your accreditation application has been rejected. Please review and resubmit.`,
+          timestamp: app.applicationDate,
+          type: "error",
+          category: "application",
+          read: false,
+          data: { applicationId: app.id },
+        });
+      } else if (app.applicationStatus === "Pending") {
+        generatedNotifications.push({
+          id: `app-pending-${app.id}`,
+          message: `⏳ Your accreditation application is under review. We'll notify you once an evaluator is assigned.`,
+          timestamp: app.applicationDate,
+          type: "info",
+          category: "application",
+          read: false,
+          data: { applicationId: app.id },
+        });
+      }
+    });
+
+    // Create notifications from feedback
+    feedback.forEach((fb) => {
+      generatedNotifications.push({
+        id: `feedback-${fb.id}`,
+        message: `💬 New feedback from ${fb.author}: ${fb.message}`,
+        timestamp: fb.timestamp,
+        type: "info",
+        category: "feedback",
+        read: false,
+        data: { feedbackId: fb.id, author: fb.author },
+      });
+    });
+
+    // Add some sample notifications for demonstration
+    if (generatedNotifications.length === 0) {
+      generatedNotifications.push(
+        {
+          id: "welcome-1",
+          message:
+            "👋 Welcome to IQS Authority! Your school dashboard is ready.",
+          timestamp: new Date().toISOString(),
+          type: "info",
+          category: "general",
+          read: false,
+        },
+        {
+          id: "evaluator-assigned-1",
+          message:
+            "👨‍🏫 Evaluator John Smith has been assigned to review your application.",
+          timestamp: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
+          type: "success",
+          category: "evaluator",
+          read: false,
+          data: { evaluatorName: "John Smith" },
+        },
+        {
+          id: "visit-scheduled-1",
+          message:
+            "📅 School visit scheduled for next week. Please prepare your documents.",
+          timestamp: new Date(Date.now() - 172800000).toISOString(), // 2 days ago
+          type: "warning",
+          category: "application",
+          read: false,
+        }
+      );
+    }
+
+    setNotifications(generatedNotifications);
+  };
+
+  // Fetch notifications when component mounts
+  useEffect(() => {
+    fetchNotifications();
+  }, [applications, feedback]); // Re-run when applications or feedback change
+
+  // Mark notification as read
+  const markNotificationAsRead = (notificationId: string) => {
+    setNotifications((prev) =>
+      prev.map((notification) =>
+        notification.id === notificationId
+          ? { ...notification, read: true }
+          : notification
+      )
+    );
+  };
+
+  // Mark all notifications as read
+  const markAllNotificationsAsRead = () => {
+    setNotifications((prev) =>
+      prev.map((notification) => ({ ...notification, read: true }))
+    );
+  };
+
+  // Get notification icon based on type
+  const getNotificationIcon = (type: string) => {
+    switch (type) {
+      case "success":
+        return "✅";
+      case "error":
+        return "❌";
+      case "warning":
+        return "⚠️";
+      case "info":
+      default:
+        return "ℹ️";
+    }
+  };
+
+  // Get notification color based on type
+  const getNotificationColor = (type: string) => {
+    switch (type) {
+      case "success":
+        return "border-green-200 bg-green-50";
+      case "error":
+        return "border-red-200 bg-red-50";
+      case "warning":
+        return "border-yellow-200 bg-yellow-50";
+      case "info":
+      default:
+        return "border-blue-200 bg-blue-50";
+    }
+  };
 
   // State for viewing a specific application
   const [selectedApplication, setSelectedApplication] = useState<any>(null);
@@ -322,8 +539,81 @@ const SchoolDashboard: React.FC = () => {
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState<string | null>(null);
 
+  // Add state for chat
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [selectedConversation, setSelectedConversation] = useState<any | null>(
+    null
+  );
+  const [unreadConversations, setUnreadConversations] = useState<Set<string>>(
+    new Set()
+  );
+  const { user, isLoading: authLoading } = useAuth();
+  const [profile, setProfile] = useState({
+    id: user?.id || "",
+    name: user?.fullName || "",
+    email: user?.email || "",
+    role: "school",
+  });
+
+  useEffect(() => {
+    setProfile({
+      id: user?.id || "",
+      name: user?.fullName || "",
+      email: user?.email || "",
+      role: "school",
+    });
+    console.log("[SchoolDashboard] user:", user);
+  }, [user]);
+
+  useEffect(() => {
+    const fetchConversations = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(
+          `${import.meta.env.VITE_API_URL}/api/messages/inbox`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        const data = await res.json();
+        console.log("[SchoolDashboard] raw inbox data:", data.inbox);
+        // Instead of filtering for conversations, filter for messages with group_name === 'schools'
+        const filtered = (data.inbox || []).filter((msg: any) => {
+          // Group messages for 'schools'
+          if (msg.group_name === "schools") return true;
+          // Direct messages to or from this school user
+          if (msg.receiver_id === user?.id || msg.sender_id === user?.id)
+            return true;
+          return false;
+        });
+        // Show both group and direct messages as conversations
+        const grouped = {};
+        (filtered || []).forEach((msg: any) => {
+          // Group by conversation_id
+          if (!grouped[msg.conversation_id]) grouped[msg.conversation_id] = [];
+          grouped[msg.conversation_id].push(msg);
+        });
+        console.log("[SchoolDashboard] grouped conversations:", grouped);
+        // Use the latest message per conversation for the list
+        const convList = Object.values(grouped).map(
+          (msgs: any[]) => msgs[msgs.length - 1]
+        );
+        console.log("[SchoolDashboard] conversation list:", convList);
+        setConversations(convList);
+        if (convList.length > 0) {
+          setSelectedConversation(convList[0]);
+          console.log("[SchoolDashboard] selectedConversation:", convList[0]);
+        }
+      } catch (err) {
+        // handle error
+      }
+    };
+    if (user?.id) fetchConversations();
+  }, [user?.id]);
+
   const sidebarItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { id: "messages", label: "Messages", icon: Bell },
     { id: "notifications", label: "Notifications", icon: Bell },
     { id: "settings", label: "Settings", icon: Settings },
   ];
@@ -372,6 +662,20 @@ const SchoolDashboard: React.FC = () => {
       if (!res.ok)
         throw new Error(resData.message || "Failed to submit application");
       setSubmitSuccess("Application submitted successfully!");
+
+      // Add notification for application submission
+      const newNotification: Notification = {
+        id: `app-submitted-${Date.now()}`,
+        message:
+          "📝 Your accreditation application has been submitted successfully and is now under review.",
+        timestamp: new Date().toISOString(),
+        type: "success",
+        category: "application",
+        read: false,
+        data: { applicationId: resData.applicationId || Date.now().toString() },
+      };
+      setNotifications((prev) => [newNotification, ...prev]);
+
       setSchoolName("");
       setCountry("");
       setAccreditationType("new");
@@ -758,46 +1062,184 @@ const SchoolDashboard: React.FC = () => {
 
   const renderNotifications = () => (
     <div className="space-y-6">
-      <h1 className="text-xl md:text-2xl font-bold text-gray-900">
-        Notifications
-      </h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl md:text-2xl font-bold text-gray-900">
+          Notifications
+        </h1>
+        {notifications.length > 0 && (
+          <button
+            onClick={markAllNotificationsAsRead}
+            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+          >
+            Mark all as read
+          </button>
+        )}
+      </div>
+
+      {/* Notification Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <span className="text-blue-600 text-lg">📊</span>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Total</p>
+              <p className="text-lg font-semibold text-gray-900">
+                {notifications.length}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center">
+            <div className="p-2 bg-red-100 rounded-lg">
+              <span className="text-red-600 text-lg">🔴</span>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Unread</p>
+              <p className="text-lg font-semibold text-gray-900">
+                {notifications.filter((n) => !n.read).length}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center">
+            <div className="p-2 bg-green-100 rounded-lg">
+              <span className="text-green-600 text-lg">✅</span>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Approvals</p>
+              <p className="text-lg font-semibold text-gray-900">
+                {notifications.filter((n) => n.category === "approval").length}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center">
+            <div className="p-2 bg-yellow-100 rounded-lg">
+              <span className="text-yellow-600 text-lg">👨‍🏫</span>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Evaluators</p>
+              <p className="text-lg font-semibold text-gray-900">
+                {notifications.filter((n) => n.category === "evaluator").length}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Notifications List */}
       <div className="bg-white rounded-lg shadow-sm border">
         <div className="p-4 md:p-6 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900">
-            Messages & Notifications
+            Recent Notifications
           </h2>
         </div>
         <div className="p-4 md:p-6 space-y-4">
-          {messagesLoading && <div>Loading messages...</div>}
-          {messagesError && <div className="text-red-500">{messagesError}</div>}
-          {messages.length === 0 && !messagesLoading && (
-            <div className="text-gray-500">No messages found.</div>
-          )}
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className="flex flex-col sm:flex-row sm:items-center justify-between py-3 border-b border-gray-100 last:border-b-0 space-y-1 sm:space-y-0"
-            >
-              <div>
-                <p className="text-sm text-gray-900 font-semibold">
-                  {msg.sender_name || msg.sender || "Unknown Sender"}
-                  {msg.group_name ? (
-                    <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
-                      Group: {msg.group_name}
-                    </span>
-                  ) : (
-                    <span className="ml-2 px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
-                      Individual
-                    </span>
-                  )}
-                </p>
-                <p className="text-sm text-gray-700 mt-1">{msg.message}</p>
-              </div>
-              <span className="text-sm text-gray-500">
-                {msg.timestamp ? new Date(msg.timestamp).toLocaleString() : ""}
-              </span>
+          {notificationsLoading && (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#1B365D] mx-auto"></div>
+              <p className="mt-2 text-gray-600">Loading notifications...</p>
             </div>
-          ))}
+          )}
+
+          {notificationsError && (
+            <div className="text-center py-8">
+              <p className="text-red-500">{notificationsError}</p>
+            </div>
+          )}
+
+          {!notificationsLoading &&
+            !notificationsError &&
+            notifications.length === 0 && (
+              <div className="text-center py-8">
+                <div className="text-gray-400 text-4xl mb-4">🔔</div>
+                <p className="text-gray-500">No notifications yet</p>
+                <p className="text-sm text-gray-400 mt-1">
+                  We'll notify you about important updates
+                </p>
+              </div>
+            )}
+
+          {!notificationsLoading &&
+            !notificationsError &&
+            notifications.length > 0 && (
+              <div className="space-y-3">
+                {notifications
+                  .sort(
+                    (a, b) =>
+                      new Date(b.timestamp).getTime() -
+                      new Date(a.timestamp).getTime()
+                  )
+                  .map((notification) => (
+                    <div
+                      key={notification.id}
+                      className={`p-4 rounded-lg border transition-all duration-200 hover:shadow-md ${
+                        notification.read
+                          ? "opacity-75"
+                          : "ring-2 ring-blue-200"
+                      } ${getNotificationColor(notification.type)}`}
+                      onClick={() => markNotificationAsRead(notification.id)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start space-x-3 flex-1">
+                          <div className="text-2xl mt-1">
+                            {getNotificationIcon(notification.type)}
+                          </div>
+                          <div className="flex-1">
+                            <p
+                              className={`text-sm ${
+                                notification.read
+                                  ? "text-gray-600"
+                                  : "text-gray-900 font-medium"
+                              }`}
+                            >
+                              {notification.message}
+                            </p>
+                            <div className="flex items-center space-x-2 mt-2">
+                              <span
+                                className={`px-2 py-1 text-xs rounded-full ${
+                                  notification.category === "approval"
+                                    ? "bg-green-100 text-green-800"
+                                    : notification.category === "evaluator"
+                                    ? "bg-blue-100 text-blue-800"
+                                    : notification.category === "application"
+                                    ? "bg-purple-100 text-purple-800"
+                                    : notification.category === "feedback"
+                                    ? "bg-orange-100 text-orange-800"
+                                    : "bg-gray-100 text-gray-800"
+                                }`}
+                              >
+                                {notification.category.charAt(0).toUpperCase() +
+                                  notification.category.slice(1)}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                {new Date(
+                                  notification.timestamp
+                                ).toLocaleDateString()}{" "}
+                                at{" "}
+                                {new Date(
+                                  notification.timestamp
+                                ).toLocaleTimeString([], {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        {!notification.read && (
+                          <div className="w-2 h-2 bg-blue-500 rounded-full ml-2"></div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
         </div>
       </div>
     </div>
@@ -891,6 +1333,8 @@ const SchoolDashboard: React.FC = () => {
     switch (activeTab) {
       case "dashboard":
         return renderDashboard();
+      case "messages":
+        return renderMessages();
       case "notifications":
         return renderNotifications();
       case "settings":
@@ -976,7 +1420,6 @@ const SchoolDashboard: React.FC = () => {
     window.URL.revokeObjectURL(url);
   };
 
-  const { user, isLoading: authLoading } = useAuth();
   const [editProfile, setEditProfile] = useState(false);
   const [profileValues, setProfileValues] = useState({
     fullName: user?.fullName || "",
@@ -1017,6 +1460,85 @@ const SchoolDashboard: React.FC = () => {
       setProfileLoading(false);
     }
   };
+
+  // Define renderMessages before renderContent
+  const renderMessages = () => (
+    <div className="flex h-full">
+      <div className="w-1/3 border-r overflow-y-auto bg-white">
+        {conversations.map((conv, idx) => {
+          const conversationId = conv.conversation_id || conv.id;
+          const isUnread = unreadConversations.has(conversationId?.toString());
+          const isSelected =
+            selectedConversation &&
+            (selectedConversation.conversation_id ||
+              selectedConversation.id) === (conv.conversation_id || conv.id);
+
+          return (
+            <div
+              key={conversationId}
+              className={`p-4 cursor-pointer hover:bg-gray-50 transition-colors ${
+                isSelected ? "bg-blue-100" : ""
+              }`}
+              onClick={() => {
+                setSelectedConversation(conv);
+                // Clear unread status when conversation is selected
+                if (isUnread) {
+                  setUnreadConversations((prev) => {
+                    const newSet = new Set(prev);
+                    newSet.delete(conversationId?.toString());
+                    return newSet;
+                  });
+                }
+                console.log("[SchoolDashboard] selectedConversation:", conv);
+              }}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <p className={`font-semibold ${isUnread ? "font-bold" : ""}`}>
+                  {conv.group_name || "Admin"}
+                </p>
+                {isUnread && (
+                  <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 truncate">{conv.message}</p>
+              <span className="text-xs text-gray-400">
+                {new Date(conv.created_at).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex-1 flex flex-col">
+        {selectedConversation ? (
+          <ChatMessages
+            profile={profile}
+            conversationId={
+              selectedConversation.conversation_id || selectedConversation.id
+            }
+            recipientId={
+              selectedConversation.group_name
+                ? selectedConversation.group_name
+                : selectedConversation.receiver_id === user?.id
+                ? selectedConversation.sender_id
+                : selectedConversation.receiver_id
+            }
+            conversationType={
+              selectedConversation.group_name ? "group" : "user"
+            }
+            onNewMessage={handleNewMessage}
+            isSelected={true}
+          />
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-gray-400">
+            Select a conversation
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <>
@@ -1071,19 +1593,19 @@ const SchoolDashboard: React.FC = () => {
         </div>
 
         {/* Main Content */}
-        
+
         <div className="flex-1 flex flex-col min-w-0">
-        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 bg-white">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
-            School Dashboard
-          </h1>
-          <button
-            onClick={handleSignOut}
-            className="px-4 py-2 rounded bg-red-500 text-white font-semibold hover:bg-red-600 transition"
-          >
-            Sign Out
-          </button>
-        </div>
+          <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 bg-white">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+              School Dashboard
+            </h1>
+            <button
+              onClick={handleSignOut}
+              className="px-4 py-2 rounded bg-red-500 text-white font-semibold hover:bg-red-600 transition"
+            >
+              Sign Out
+            </button>
+          </div>
           {/* Mobile Header */}
           <div className="md:hidden bg-white shadow-sm border-b px-4 py-3 flex items-center justify-between">
             <button
