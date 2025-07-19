@@ -86,7 +86,7 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({
   useEffect(() => {
     if (profile.id) {
       console.log("ChatMessages: Initializing socket for user:", profile.id);
-      const s = io(import.meta.env.VITE_API_URL || "http://localhost:5000");
+      const s = io(import.meta.env.VITE_API_URL );
 
       s.on("connect", () => {
         console.log("ChatMessages: Socket connected, socket ID:", s.id);

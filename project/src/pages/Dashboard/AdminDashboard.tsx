@@ -535,7 +535,7 @@ const AdminDashboard: React.FC = () => {
   useEffect(() => {
     if (activeTab === "messaging" && profile?.id) {
       const socket = io(
-        import.meta.env.VITE_API_URL || "http://localhost:5000"
+        import.meta.env.VITE_API_URL 
       );
 
       socket.on("connect", () => {

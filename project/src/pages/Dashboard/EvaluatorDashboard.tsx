@@ -257,7 +257,7 @@ const EvaluatorDashboard: React.FC = () => {
   // Real-time messaging setup
   useEffect(() => {
     if (profile.id) {
-      const s = io(import.meta.env.VITE_API_URL || "http://localhost:5000");
+      const s = io(import.meta.env.VITE_API_URL );
       s.emit("register", profile.id);
       s.on("receive-message", (data: any) => {
         // Show notification (replace alert with toast/snackbar in production)
