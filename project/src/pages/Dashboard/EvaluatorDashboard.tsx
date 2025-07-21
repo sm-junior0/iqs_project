@@ -257,7 +257,7 @@ const EvaluatorDashboard: React.FC = () => {
   // Real-time messaging setup
   useEffect(() => {
     if (profile.id) {
-      const s = io(import.meta.env.VITE_API_URL );
+      const s = io(import.meta.env.VITE_API_URL);
       s.emit("register", profile.id);
       s.on("receive-message", (data: any) => {
         // Show notification (replace alert with toast/snackbar in production)
@@ -518,6 +518,61 @@ const EvaluatorDashboard: React.FC = () => {
   useEffect(() => {
     fetchNotifications();
   }, [assignedSchools, reports]); // Re-run when assigned schools or reports change
+
+  // Socket connection for real-time conversations
+  useEffect(() => {
+    // Only connect when profile is loaded
+    if (profile?.id) {
+      const socket = io(import.meta.env.VITE_API_URL);
+
+      socket.on("connect", () => {
+        console.log(
+          "EvaluatorDashboard: Socket connected for user:",
+          profile.id
+        );
+        socket.emit("register", profile.id);
+      });
+
+      socket.on("receive-message", (data: any) => {
+        console.log("EvaluatorDashboard: Received real-time message", data);
+        handleNewMessage(data);
+      });
+
+      socket.on("new-conversation", (data: any) => {
+        console.log("EvaluatorDashboard: New conversation", data);
+        // Add new conversation to the list if it doesn't exist
+        setConversations((prevConversations) => {
+          const exists = prevConversations.some(
+            (conv) => conv.id === data.conversationId
+          );
+          if (!exists) {
+            const newConversation = {
+              id: data.conversationId,
+              type: data.type,
+              last_message: data.message,
+              updated_at: new Date().toISOString(),
+              other_user_name: data.sender_name || "Unknown",
+              other_user_id: data.sender_id,
+              user_ids:
+                data.type === "group"
+                  ? undefined
+                  : [profile.id, data.sender_id],
+              participants:
+                data.type === "group"
+                  ? []
+                  : [{ id: data.sender_id, name: data.sender_name }],
+            };
+            return [newConversation, ...prevConversations];
+          }
+          return prevConversations;
+        });
+      });
+
+      return () => {
+        socket.disconnect();
+      };
+    }
+  }, [profile?.id]); // Add profile.id as dependency
 
   const stats: StatCard[] = [
     {

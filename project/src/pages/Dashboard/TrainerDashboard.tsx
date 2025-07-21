@@ -13,6 +13,7 @@ import {
   Menu,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { io } from "socket.io-client";
 // import { useAuth } from '../../context/AuthContext';
 import ChatMessages from "../../components/ChatMessages";
 
@@ -440,6 +441,8 @@ const TrainerDashboard: React.FC = () => {
     };
     fetchAttendanceStats();
   }, []);
+
+  // Socket connection for real-time conversations - will be added after profile state is declared
 
   const reports: Report[] = Array(5)
     .fill(null)
@@ -1996,6 +1999,58 @@ const TrainerDashboard: React.FC = () => {
     };
     fetchProfile();
   }, []);
+
+  // Socket connection for real-time conversations
+  useEffect(() => {
+    // Only connect when profile is loaded
+    if (profile?.id) {
+      const socket = io(import.meta.env.VITE_API_URL);
+
+      socket.on("connect", () => {
+        console.log("TrainerDashboard: Socket connected for user:", profile.id);
+        socket.emit("register", profile.id);
+      });
+
+      socket.on("receive-message", (data: any) => {
+        console.log("TrainerDashboard: Received real-time message", data);
+        handleNewMessage(data);
+      });
+
+      socket.on("new-conversation", (data: any) => {
+        console.log("TrainerDashboard: New conversation", data);
+        // Add new conversation to the list if it doesn't exist
+        setConversations((prevConversations) => {
+          const exists = prevConversations.some(
+            (conv) => conv.id === data.conversationId
+          );
+          if (!exists) {
+            const newConversation = {
+              id: data.conversationId,
+              type: data.type,
+              last_message: data.message,
+              updated_at: new Date().toISOString(),
+              other_user_name: data.sender_name || "Unknown",
+              other_user_id: data.sender_id,
+              user_ids:
+                data.type === "group"
+                  ? undefined
+                  : [profile.id, data.sender_id],
+              participants:
+                data.type === "group"
+                  ? []
+                  : [{ id: data.sender_id, name: data.sender_name }],
+            };
+            return [newConversation, ...prevConversations];
+          }
+          return prevConversations;
+        });
+      });
+
+      return () => {
+        socket.disconnect();
+      };
+    }
+  }, [profile?.id]); // Add profile.id as dependency
 
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();

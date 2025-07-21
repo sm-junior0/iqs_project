@@ -611,6 +611,56 @@ const SchoolDashboard: React.FC = () => {
     if (user?.id) fetchConversations();
   }, [user?.id]);
 
+  // Socket connection for real-time conversations
+  useEffect(() => {
+    // Only connect when user is loaded
+    if (user?.id) {
+      const socket = io(import.meta.env.VITE_API_URL);
+
+      socket.on("connect", () => {
+        console.log("SchoolDashboard: Socket connected for user:", user.id);
+        socket.emit("register", user.id);
+      });
+
+      socket.on("receive-message", (data: any) => {
+        console.log("SchoolDashboard: Received real-time message", data);
+        handleNewMessage(data);
+      });
+
+      socket.on("new-conversation", (data: any) => {
+        console.log("SchoolDashboard: New conversation", data);
+        // Add new conversation to the list if it doesn't exist
+        setConversations((prevConversations) => {
+          const exists = prevConversations.some(
+            (conv) => conv.id === data.conversationId
+          );
+          if (!exists) {
+            const newConversation = {
+              id: data.conversationId,
+              type: data.type,
+              last_message: data.message,
+              updated_at: new Date().toISOString(),
+              other_user_name: data.sender_name || "Unknown",
+              other_user_id: data.sender_id,
+              user_ids:
+                data.type === "group" ? undefined : [user.id, data.sender_id],
+              participants:
+                data.type === "group"
+                  ? []
+                  : [{ id: data.sender_id, name: data.sender_name }],
+            };
+            return [newConversation, ...prevConversations];
+          }
+          return prevConversations;
+        });
+      });
+
+      return () => {
+        socket.disconnect();
+      };
+    }
+  }, [user?.id]); // Add user.id as dependency
+
   const sidebarItems = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "messages", label: "Messages", icon: Bell },
